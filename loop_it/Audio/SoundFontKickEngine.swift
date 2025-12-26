@@ -5,6 +5,7 @@ import AVFoundation
 struct KickTrack: Equatable {
     var pattern: [Bool]
     var speedMultiplier: Double
+    var repeatCount: Int
 }
 
 @MainActor
@@ -43,6 +44,7 @@ final class SoundFontKickEngine: ObservableObject {
     private var kickTracks: [KickTrack] = []
     private var currentTrackIndexInternal: Int = 0
     private var currentStepIndex: Int = 0
+    private var currentTrackRepeatRemaining: Int = 1
 
     init(soundFontName: String = "GeneralUser-GS", soundFontExtension: String = "sf2") {
         self.soundFontName = soundFontName
@@ -122,7 +124,10 @@ final class SoundFontKickEngine: ObservableObject {
 
     // MARK: - Transport
     func start(bpm: Double) {
-        start(bpm: bpm, tracks: [KickTrack(pattern: kickPattern, speedMultiplier: kickSpeedMultiplier)])
+        start(
+            bpm: bpm,
+            tracks: [KickTrack(pattern: kickPattern, speedMultiplier: kickSpeedMultiplier, repeatCount: 1)]
+        )
     }
 
     func start(bpm: Double, tracks: [KickTrack]) {
@@ -134,6 +139,7 @@ final class SoundFontKickEngine: ObservableObject {
         currentTrackIndexInternal = 0
         currentStepIndex = 0
         currentTrackIndex = 0
+        currentTrackRepeatRemaining = max(1, tracks[0].repeatCount)
 
         startKickTimer()
     }
@@ -145,7 +151,9 @@ final class SoundFontKickEngine: ObservableObject {
 
         // If running, restart timer with new interval.
         if isRunning {
-            updateKickTracks([KickTrack(pattern: kickPattern, speedMultiplier: kickSpeedMultiplier)])
+            updateKickTracks([
+                KickTrack(pattern: kickPattern, speedMultiplier: kickSpeedMultiplier, repeatCount: 1)
+            ])
         }
     }
 
@@ -161,6 +169,7 @@ final class SoundFontKickEngine: ObservableObject {
                 currentStepIndex = 0
                 currentTrackIndex = 0
             }
+            currentTrackRepeatRemaining = max(1, tracks[currentTrackIndexInternal].repeatCount)
             startKickTimer()
         }
     }
@@ -171,6 +180,7 @@ final class SoundFontKickEngine: ObservableObject {
         currentTrackIndex = nil
         currentTrackIndexInternal = 0
         currentStepIndex = 0
+        currentTrackRepeatRemaining = 1
         sampler.sendController(123, withValue: 0, onChannel: midiChannel)
     }
 
@@ -204,8 +214,16 @@ final class SoundFontKickEngine: ObservableObject {
             let nextStep = self.currentStepIndex + 1
             if nextStep >= safePatternLength {
                 self.currentStepIndex = 0
-                self.currentTrackIndexInternal = (self.currentTrackIndexInternal + 1) % self.kickTracks.count
-                self.currentTrackIndex = self.currentTrackIndexInternal
+                if self.currentTrackRepeatRemaining > 1 {
+                    self.currentTrackRepeatRemaining -= 1
+                } else {
+                    self.currentTrackIndexInternal = (self.currentTrackIndexInternal + 1) % self.kickTracks.count
+                    self.currentTrackIndex = self.currentTrackIndexInternal
+                    self.currentTrackRepeatRemaining = max(
+                        1,
+                        self.kickTracks[self.currentTrackIndexInternal].repeatCount
+                    )
+                }
                 self.startKickTimer(startImmediately: false)
             } else {
                 self.currentStepIndex = nextStep
