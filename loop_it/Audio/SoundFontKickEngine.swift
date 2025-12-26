@@ -175,7 +175,7 @@ final class SoundFontKickEngine: ObservableObject {
     }
 
     // MARK: - Timer control
-    private func startKickTimer() {
+    private func startKickTimer(startImmediately: Bool = true) {
         stopKickTimer()
 
         guard !kickTracks.isEmpty else { return }
@@ -185,7 +185,8 @@ final class SoundFontKickEngine: ObservableObject {
         let interval = 60.0 / effectiveBpm
 
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now(), repeating: interval)
+        let deadline: DispatchTime = startImmediately ? .now() : .now() + interval
+        timer.schedule(deadline: deadline, repeating: interval)
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             guard self.kickTracks.indices.contains(self.currentTrackIndexInternal) else {
@@ -205,7 +206,7 @@ final class SoundFontKickEngine: ObservableObject {
                 self.currentStepIndex = 0
                 self.currentTrackIndexInternal = (self.currentTrackIndexInternal + 1) % self.kickTracks.count
                 self.currentTrackIndex = self.currentTrackIndexInternal
-                self.startKickTimer()
+                self.startKickTimer(startImmediately: false)
             } else {
                 self.currentStepIndex = nextStep
             }
