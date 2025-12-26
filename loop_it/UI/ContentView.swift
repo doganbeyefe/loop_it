@@ -13,18 +13,26 @@ struct ContentView: View {
     @State private var bpm: Double = 120
     @State private var kickPatterns: [KickPatternRow] = (0..<4).map { _ in KickPatternRow() }
     @State private var selectedPreset: KickPreset = KickPreset.all[0]
+    private let bpmFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .none
+        formatter.minimum = 1
+        formatter.maximum = 400
+        return formatter
+    }()
 
     var body: some View {
-        VStack(spacing: 24) {
-            headerSection
-            presetSection
-            patternSection
-            tempoSection
-            transportSection
-        }
-        .padding()
-        .onAppear {
-            audio.setKickPreset(selectedPreset)
+        ScrollView {
+            VStack(spacing: 24) {
+                headerSection
+                presetSection
+                patternSection
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .onAppear {
+                audio.setKickPreset(selectedPreset)
+            }
         }
     }
 }
@@ -32,9 +40,13 @@ struct ContentView: View {
 // MARK: - Sections
 private extension ContentView {
     var headerSection: some View {
-        Text("Kick")
-            .font(.title2)
-            .bold()
+        HStack(alignment: .top) {
+            Text("Kick")
+                .font(.title2)
+                .bold()
+            Spacer()
+            topRightSection
+        }
     }
 
     var presetSection: some View {
@@ -64,7 +76,10 @@ private extension ContentView {
                 HStack(spacing: 16) {
                     KickPatternView(steps: $kickPatterns[index].steps)
                     Spacer()
-                    KickSpeedControl(speed: $kickPatterns[index].speed)
+                    KickSpeedControl(
+                        speed: $kickPatterns[index].speed,
+                        repeatCount: $kickPatterns[index].repeatCount
+                    )
                 }
                 .padding(8)
                 .background(
@@ -81,38 +96,47 @@ private extension ContentView {
         }
         .onChange(of: kickPatterns) { _, newPatterns in
             guard audio.isRunning else { return }
-            audio.updateKickTracks(
-                newPatterns.map { KickTrack(pattern: $0.steps, speedMultiplier: $0.speed) }
-            )
+            audio.updateKickTracks(newPatterns.map {
+                KickTrack(pattern: $0.steps, speedMultiplier: $0.speed, repeatCount: $0.repeatCount)
+            })
         }
     }
 
-    var tempoSection: some View {
-        VStack {
-            Text("BPM: \(Int(bpm))")
-            Slider(value: $bpm, in: 40...240, step: 1)
-        }
-    }
-
-    var transportSection: some View {
-        HStack {
-            Button("Start") {
-                audio.setKickPreset(selectedPreset)
-                audio.start(
-                    bpm: bpm,
-                    tracks: kickPatterns.map {
-                        KickTrack(pattern: $0.steps, speedMultiplier: $0.speed)
-                    }
-                )
+    var topRightSection: some View {
+        VStack(alignment: .trailing, spacing: 12) {
+            HStack(spacing: 8) {
+                Text("BPM")
+                    .font(.subheadline)
+                TextField("BPM", value: $bpm, formatter: bpmFormatter)
+                    .frame(width: 70)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .keyboardType(.numberPad)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(audio.isRunning)
 
-            Button("Stop") {
-                audio.stop()
+            HStack {
+                Button("Start") {
+                    audio.setKickPreset(selectedPreset)
+                    audio.start(
+                        bpm: bpm,
+                        tracks: kickPatterns.map {
+                            KickTrack(
+                                pattern: $0.steps,
+                                speedMultiplier: $0.speed,
+                                repeatCount: $0.repeatCount
+                            )
+                        }
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(audio.isRunning)
+
+                Button("Stop") {
+                    audio.stop()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!audio.isRunning)
             }
-            .buttonStyle(.bordered)
-            .disabled(!audio.isRunning)
         }
     }
 
