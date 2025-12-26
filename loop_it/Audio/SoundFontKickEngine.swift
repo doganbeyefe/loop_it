@@ -1,6 +1,11 @@
 import Foundation
 import AVFoundation
 
+struct KickTrack: Equatable {
+    var pattern: [Bool]
+    var speedMultiplier: Double
+}
+
 @MainActor
 final class SoundFontKickEngine: ObservableObject {
 
@@ -8,7 +13,7 @@ final class SoundFontKickEngine: ObservableObject {
 
     private let engine = AVAudioEngine()
     private let sampler = AVAudioUnitSampler()
-    private var timer: DispatchSourceTimer?
+    private var trackTimers: [DispatchSourceTimer] = []
     
     private var baseBpm: Double = 120
     var kickSpeedMultiplier: Double = 1.0 // 0.5, 1, 2, 4, ...
@@ -28,31 +33,49 @@ final class SoundFontKickEngine: ObservableObject {
     private var sf2URL: URL?
     private var currentProgram: UInt8 = 0
     
-    private var stepIndex: Int = 0
     var kickPattern: [Bool] = [true, false, false, false] // if you already added it
+    private var kickTracks: [KickTrack] = []
+    private var trackStepIndices: [Int] = []
 
-    private func startKickTimer() {
-        // kick-only BPM
-        let effectiveBpm = max(1, baseBpm * kickSpeedMultiplier)
-        let interval = 60.0 / effectiveBpm
+    private func startKickTimers() {
+        stopKickTimers()
 
-        let t = DispatchSource.makeTimerSource(queue: .main)
-        t.schedule(deadline: .now(), repeating: interval)
-        t.setEventHandler { [weak self] in
-            guard let self else { return }
+        trackStepIndices = Array(repeating: 0, count: kickTracks.count)
 
-            if self.kickPattern.indices.contains(self.stepIndex),
-               self.kickPattern[self.stepIndex] {
-                self.triggerKick()
+        for index in kickTracks.indices {
+            let track = kickTracks[index]
+            let effectiveBpm = max(1, baseBpm * track.speedMultiplier)
+            let interval = 60.0 / effectiveBpm
+
+            let t = DispatchSource.makeTimerSource(queue: .main)
+            t.schedule(deadline: .now(), repeating: interval)
+            t.setEventHandler { [weak self] in
+                guard let self else { return }
+                guard self.kickTracks.indices.contains(index),
+                      self.trackStepIndices.indices.contains(index) else {
+                    return
+                }
+
+                let pattern = self.kickTracks[index].pattern
+                let stepIndex = self.trackStepIndices[index]
+                if pattern.indices.contains(stepIndex),
+                   pattern[stepIndex] {
+                    self.triggerKick()
+                }
+
+                let nextIndex = (stepIndex + 1) % max(pattern.count, 1)
+                self.trackStepIndices[index] = nextIndex
             }
 
-            self.stepIndex = (self.stepIndex + 1) % max(self.kickPattern.count, 1)
+            trackTimers.append(t)
+            t.resume()
         }
-
-        timer = t
-        t.resume()
     }
 
+    private func stopKickTimers() {
+        trackTimers.forEach { $0.cancel() }
+        trackTimers.removeAll()
+    }
 
 
     init(soundFontName: String = "GeneralUser-GS", soundFontExtension: String = "sf2") {
@@ -133,13 +156,17 @@ final class SoundFontKickEngine: ObservableObject {
 
     // MARK: - Transport
     func start(bpm: Double) {
+        start(bpm: bpm, tracks: [KickTrack(pattern: kickPattern, speedMultiplier: kickSpeedMultiplier)])
+    }
+
+    func start(bpm: Double, tracks: [KickTrack]) {
         guard !isRunning, bpm > 0 else { return }
 
         baseBpm = bpm
         isRunning = true
-        stepIndex = 0
+        kickTracks = tracks
 
-        startKickTimer()
+        startKickTimers()
     }
     
     func setKickSpeedMultiplier(_ newValue: Double) {
@@ -149,20 +176,21 @@ final class SoundFontKickEngine: ObservableObject {
 
         // if running, restart timer with new interval
         if isRunning {
-            timer?.cancel()
-            timer = nil
-            startKickTimer()
+            updateKickTracks([KickTrack(pattern: kickPattern, speedMultiplier: kickSpeedMultiplier)])
+        }
+    }
+
+    func updateKickTracks(_ tracks: [KickTrack]) {
+        kickTracks = tracks
+        if isRunning {
+            startKickTimers()
         }
     }
 
 
-
-
     func stop() {
         isRunning = false
-        timer?.cancel()
-        timer = nil
+        stopKickTimers()
         sampler.sendController(123, withValue: 0, onChannel: midiChannel)
     }
 }
-
