@@ -8,21 +8,37 @@
 import SwiftUI
 
 struct ContentView: View {
+    // MARK: - State
     @StateObject private var audio = SoundFontKickEngine()
     @State private var bpm: Double = 120
-    @State private var kickPatterns: [KickPatternRow] = (0..<4).map { _ in
-        KickPatternRow()
-    }
-
-    // if you already have the one-picker:
+    @State private var kickPatterns: [KickPatternRow] = (0..<4).map { _ in KickPatternRow() }
     @State private var selectedPreset: KickPreset = KickPreset.all[0]
 
     var body: some View {
         VStack(spacing: 24) {
-            Text("Kick")
-                .font(.title2).bold()
+            headerSection
+            presetSection
+            patternSection
+            tempoSection
+            transportSection
+        }
+        .padding()
+        .onAppear {
+            audio.setKickPreset(selectedPreset)
+        }
+    }
+}
 
-            // One picker for kick sound
+// MARK: - Sections
+private extension ContentView {
+    var headerSection: some View {
+        Text("Kick")
+            .font(.title2)
+            .bold()
+    }
+
+    var presetSection: some View {
+        VStack(spacing: 12) {
             Picker("Kick", selection: $selectedPreset) {
                 ForEach(KickPreset.all) { preset in
                     Text(preset.title).tag(preset)
@@ -38,124 +54,86 @@ struct ContentView: View {
                 audio.playKickPreview()
             }
             .buttonStyle(.bordered)
-
-            // Pattern UI
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(kickPatterns.indices, id: \.self) { index in
-                    let isActive = audio.currentTrackIndex == index
-                    HStack(spacing: 16) {
-                        KickPatternView(steps: $kickPatterns[index].steps)
-
-                        Spacer()
-
-                        KickSpeedControl(speed: $kickPatterns[index].speed)
-                    }
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(isActive ? Color.accentColor.opacity(0.15) : Color.clear)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(isActive ? Color.accentColor : Color.clear, lineWidth: 2)
-                    )
-                }
-
-                HStack {
-                    Spacer()
-                    Button {
-                        addKickPattern()
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title2)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add kick pattern")
-                    Spacer()
-                }
-            }
-            .onChange(of: kickPatterns) { _, newPatterns in
-                if audio.isRunning {
-                    audio.updateKickTracks(
-                        newPatterns.map { KickTrack(pattern: $0.steps, speedMultiplier: $0.speed) }
-                    )
-                }
-            }
-
-            VStack {
-                Text("BPM: \(Int(bpm))")
-                Slider(value: $bpm, in: 40...240, step: 1)
-            }
-
-            HStack {
-                Button("Start") {
-                    audio.setKickPreset(selectedPreset)
-                    audio.start(
-                        bpm: bpm,
-                        tracks: kickPatterns.map {
-                            KickTrack(pattern: $0.steps, speedMultiplier: $0.speed)
-                        }
-                    )
-                }
-
-                .buttonStyle(.borderedProminent)
-                .disabled(audio.isRunning)
-
-                Button("Stop") {
-                    audio.stop()
-                }
-                .buttonStyle(.bordered)
-                .disabled(!audio.isRunning)
-            }
-        }
-        .padding()
-        .onAppear {
-            audio.setKickPreset(selectedPreset)
         }
     }
-}
 
-private extension Double {
-    var cleanSpeedText: String {
-        // show 1 instead of 1.0
-        if self == floor(self) { return String(Int(self)) }
-        return String(self)
+    var patternSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(kickPatterns.indices, id: \.self) { index in
+                let isActive = audio.currentTrackIndex == index
+                HStack(spacing: 16) {
+                    KickPatternView(steps: $kickPatterns[index].steps)
+                    Spacer()
+                    KickSpeedControl(speed: $kickPatterns[index].speed)
+                }
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(isActive ? Color.accentColor.opacity(0.15) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(isActive ? Color.accentColor : Color.clear, lineWidth: 2)
+                )
+            }
+
+            addPatternButton
+        }
+        .onChange(of: kickPatterns) { _, newPatterns in
+            guard audio.isRunning else { return }
+            audio.updateKickTracks(
+                newPatterns.map { KickTrack(pattern: $0.steps, speedMultiplier: $0.speed) }
+            )
+        }
     }
-}
 
-private struct KickPatternRow: Identifiable, Equatable {
-    let id = UUID()
-    var steps: [Bool] = [true, false, false, false]
-    var speed: Double = 1.0
-}
+    var tempoSection: some View {
+        VStack {
+            Text("BPM: \(Int(bpm))")
+            Slider(value: $bpm, in: 40...240, step: 1)
+        }
+    }
 
-private struct KickSpeedControl: View {
-    @Binding var speed: Double
+    var transportSection: some View {
+        HStack {
+            Button("Start") {
+                audio.setKickPreset(selectedPreset)
+                audio.start(
+                    bpm: bpm,
+                    tracks: kickPatterns.map {
+                        KickTrack(pattern: $0.steps, speedMultiplier: $0.speed)
+                    }
+                )
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(audio.isRunning)
 
-    var body: some View {
-        HStack(spacing: 10) {
-            Button("/2") {
-                speed = max(speed / 2.0, 0.25)
+            Button("Stop") {
+                audio.stop()
             }
             .buttonStyle(.bordered)
-
-            Text("speed: \(speed.cleanSpeedText)")
-                .font(.subheadline)
-                .monospacedDigit()
-
-            Button("x2") {
-                speed = min(speed * 2.0, 8.0)
-            }
-            .buttonStyle(.bordered)
+            .disabled(!audio.isRunning)
         }
     }
-}
 
-private extension ContentView {
+    var addPatternButton: some View {
+        HStack {
+            Spacer()
+            Button {
+                addKickPattern()
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title2)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add kick pattern")
+            Spacer()
+        }
+    }
+
     func addKickPattern() {
         kickPatterns.append(KickPatternRow())
     }
 }
-
 
 #Preview { ContentView() }

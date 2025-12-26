@@ -7,6 +7,7 @@
 
 import Foundation
 
+/// Maps a friendly name to a GM drum kit program and kick note.
 struct KickPreset: Identifiable, Hashable {
     let id: String
     let title: String
@@ -38,7 +39,7 @@ struct KickPreset: Identifiable, Hashable {
         .init(id: "dance_36", title: "Dance Kick", program: 26, midiNote: 36),
         .init(id: "dance_35", title: "Dance Kick 2", program: 26, midiNote: 35),
 
-        // Orchestral (if you want it)
+        // Orchestral
         .init(id: "orch_36", title: "Concert Bass Drum", program: 48, midiNote: 36),
         .init(id: "orch_35", title: "Concert Bass Drum 2", program: 48, midiNote: 35),
     ]
