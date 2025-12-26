@@ -10,6 +10,7 @@ import SwiftUI
 struct KickPatternView: View {
     @Binding var steps: [Bool]   // expects 4 items
 
+
     var body: some View {
         HStack(spacing: 12) {
             ForEach(steps.indices, id: \.self) { i in

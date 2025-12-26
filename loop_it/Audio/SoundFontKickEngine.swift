@@ -9,6 +9,10 @@ final class SoundFontKickEngine: ObservableObject {
     private let engine = AVAudioEngine()
     private let sampler = AVAudioUnitSampler()
     private var timer: DispatchSourceTimer?
+    
+    private var baseBpm: Double = 120
+    var kickSpeedMultiplier: Double = 1.0 // 0.5, 1, 2, 4, ...
+
 
     private let soundFontName: String
     private let soundFontExtension: String
@@ -24,8 +28,31 @@ final class SoundFontKickEngine: ObservableObject {
     private var sf2URL: URL?
     private var currentProgram: UInt8 = 0
     
-    var kickPattern: [Bool] = [true, false, false, false]  // default: every bar
     private var stepIndex: Int = 0
+    var kickPattern: [Bool] = [true, false, false, false] // if you already added it
+
+    private func startKickTimer() {
+        // kick-only BPM
+        let effectiveBpm = max(1, baseBpm * kickSpeedMultiplier)
+        let interval = 60.0 / effectiveBpm
+
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        t.schedule(deadline: .now(), repeating: interval)
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+
+            if self.kickPattern.indices.contains(self.stepIndex),
+               self.kickPattern[self.stepIndex] {
+                self.triggerKick()
+            }
+
+            self.stepIndex = (self.stepIndex + 1) % max(self.kickPattern.count, 1)
+        }
+
+        timer = t
+        t.resume()
+    }
+
 
 
     init(soundFontName: String = "GeneralUser-GS", soundFontExtension: String = "sf2") {
@@ -108,26 +135,27 @@ final class SoundFontKickEngine: ObservableObject {
     func start(bpm: Double) {
         guard !isRunning, bpm > 0 else { return }
 
-        let interval = 60.0 / bpm  // 1 tick per beat (quarter note)
+        baseBpm = bpm
         isRunning = true
         stepIndex = 0
 
-        let t = DispatchSource.makeTimerSource(queue: .main)
-        t.schedule(deadline: .now(), repeating: interval)
-        t.setEventHandler { [weak self] in
-            guard let self else { return }
-
-            if self.kickPattern.indices.contains(self.stepIndex),
-               self.kickPattern[self.stepIndex] {
-                self.triggerKick()
-            }
-
-            self.stepIndex = (self.stepIndex + 1) % max(self.kickPattern.count, 1)
-        }
-
-        timer = t
-        t.resume()
+        startKickTimer()
     }
+    
+    func setKickSpeedMultiplier(_ newValue: Double) {
+        // clamp to sensible values
+        let clamped = min(max(newValue, 0.25), 8.0)
+        kickSpeedMultiplier = clamped
+
+        // if running, restart timer with new interval
+        if isRunning {
+            timer?.cancel()
+            timer = nil
+            startKickTimer()
+        }
+    }
+
+
 
 
     func stop() {

@@ -10,6 +10,8 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var audio = SoundFontKickEngine()
     @State private var bpm: Double = 120
+    @State private var kickSpeed: Double = 1.0
+
 
     // 4 steps = 1 bar in 4/4 (1 step per beat)
     @State private var pattern: [Bool] = [true, false, false, false]
@@ -39,8 +41,27 @@ struct ContentView: View {
             }
             .buttonStyle(.bordered)
 
-            // ✅ Pattern UI
+            // Pattern UI
+            
             KickPatternView(steps: $pattern)
+            
+            HStack(spacing: 10) {
+               Button("/2") {
+                   kickSpeed = max(kickSpeed / 2.0, 0.25)
+                   audio.setKickSpeedMultiplier(kickSpeed)
+               }
+               .buttonStyle(.bordered)
+
+               Text("speed: \(kickSpeed.cleanSpeedText)")
+                   .font(.subheadline)
+                   .monospacedDigit()
+
+               Button("x2") {
+                   kickSpeed = min(kickSpeed * 2.0, 8.0)
+                   audio.setKickSpeedMultiplier(kickSpeed)
+               }
+               .buttonStyle(.bordered)
+            }
 
             VStack {
                 Text("BPM: \(Int(bpm))")
@@ -50,9 +71,11 @@ struct ContentView: View {
             HStack {
                 Button("Start") {
                     audio.setKickPreset(selectedPreset)
-                    audio.kickPattern = pattern   // ✅ pass pattern into engine
+                    audio.kickPattern = pattern
+                    audio.setKickSpeedMultiplier(kickSpeed)
                     audio.start(bpm: bpm)
                 }
+
                 .buttonStyle(.borderedProminent)
                 .disabled(audio.isRunning)
 
@@ -70,5 +93,14 @@ struct ContentView: View {
         }
     }
 }
+
+private extension Double {
+    var cleanSpeedText: String {
+        // show 1 instead of 1.0
+        if self == floor(self) { return String(Int(self)) }
+        return String(self)
+    }
+}
+
 
 #Preview { ContentView() }
