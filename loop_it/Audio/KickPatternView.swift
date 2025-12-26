@@ -14,14 +14,30 @@ struct KickPatternView: View {
     var body: some View {
         HStack(spacing: 12) {
             ForEach(steps.indices, id: \.self) { index in
+                let isOn = steps[index]
                 Button {
                     steps[index].toggle()
                 } label: {
-                    Image(systemName: steps[index] ? "checkmark.square.fill" : "square")
-                        .font(.system(size: 28))
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isOn ? Color.accentColor : Color(.secondarySystemFill))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(Color.black.opacity(0.12), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(isOn ? 0.25 : 0.12), radius: 4, x: 0, y: 2)
+
+                        Circle()
+                            .fill(isOn ? Color.white.opacity(0.35) : Color.black.opacity(0.12))
+                            .frame(width: 12, height: 12)
+                            .offset(x: 10, y: -10)
+                    }
+                    .frame(width: 44, height: 44)
+                    .scaleEffect(isOn ? 1.02 : 1.0)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Step \(index + 1)")
+                .accessibilityValue(isOn ? "On" : "Off")
             }
         }
     }
