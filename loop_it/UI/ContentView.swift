@@ -41,14 +41,24 @@ struct ContentView: View {
 
             // Pattern UI
             VStack(alignment: .leading, spacing: 16) {
-                ForEach($kickPatterns) { $pattern in
+                ForEach(kickPatterns.indices, id: \.self) { index in
+                    let isActive = audio.currentTrackIndex == index
                     HStack(spacing: 16) {
-                        KickPatternView(steps: $pattern.steps)
+                        KickPatternView(steps: $kickPatterns[index].steps)
 
                         Spacer()
 
-                        KickSpeedControl(speed: $pattern.speed)
+                        KickSpeedControl(speed: $kickPatterns[index].speed)
                     }
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(isActive ? Color.accentColor.opacity(0.15) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(isActive ? Color.accentColor : Color.clear, lineWidth: 2)
+                    )
                 }
 
                 HStack {
