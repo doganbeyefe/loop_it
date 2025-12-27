@@ -78,7 +78,10 @@ private extension ContentView {
                     Spacer()
                     KickSpeedControl(
                         speed: $kickPatterns[index].speed,
-                        repeatCount: $kickPatterns[index].repeatCount
+                        repeatCount: $kickPatterns[index].repeatCount,
+                        onDelete: {
+                            removeKickPattern(at: index)
+                        }
                     )
                 }
                 .padding(8)
@@ -152,6 +155,11 @@ private extension ContentView {
 
     func addKickPattern() {
         kickPatterns.append(KickPatternRow())
+    }
+
+    func removeKickPattern(at index: Int) {
+        guard kickPatterns.indices.contains(index) else { return }
+        kickPatterns.remove(at: index)
     }
 }
 
