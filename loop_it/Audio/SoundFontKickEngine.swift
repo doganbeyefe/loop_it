@@ -9,6 +9,9 @@ struct KickTrack: Equatable {
 }
 
 final class SoundFontKickEngine: ObservableObject {
+    private static var isRunningInPreview: Bool {
+        ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+    }
 
     // MARK: - Published state
     @Published var isRunning = false
@@ -67,6 +70,8 @@ final class SoundFontKickEngine: ObservableObject {
     init(soundFontName: String = "GeneralUser-GS", soundFontExtension: String = "sf2") {
         self.soundFontName = soundFontName
         self.soundFontExtension = soundFontExtension
+
+        guard !Self.isRunningInPreview else { return }
 
         setupAudio()
         loadSoundFontURL()
@@ -315,6 +320,7 @@ final class SoundFontKickEngine: ObservableObject {
 
     // MARK: - Instance management
     func syncInstrumentInstances(_ instances: [(UUID, DrumInstrument)]) {
+        guard !Self.isRunningInPreview else { return }
         playbackQueue.async {
             let desiredIDs = Set(instances.map { $0.0 })
             let existingIDs = Set(self.instrumentStates.keys)
@@ -331,8 +337,19 @@ final class SoundFontKickEngine: ObservableObject {
         let sampler = AVAudioUnitSampler()
         let state = InstrumentState(instrument: instrument, sampler: sampler)
         instrumentStates[id] = state
+        let wasRunning = engine.isRunning
+        if wasRunning {
+            engine.stop()
+        }
         engine.attach(sampler)
         engine.connect(sampler, to: engine.mainMixerNode, format: nil)
+        if wasRunning {
+            do {
+                try engine.start()
+            } catch {
+                print("❌ Audio restart error:", error)
+            }
+        }
         setDrumKitProgram(for: id, program: 0)
     }
 
@@ -340,7 +357,18 @@ final class SoundFontKickEngine: ObservableObject {
         guard let state = instrumentStates[id] else { return }
         stopInstrumentTimer(for: id)
         state.sampler.sendController(123, withValue: 0, onChannel: midiChannel)
+        let wasRunning = engine.isRunning
+        if wasRunning {
+            engine.stop()
+        }
         engine.detach(state.sampler)
+        if wasRunning {
+            do {
+                try engine.start()
+            } catch {
+                print("❌ Audio restart error:", error)
+            }
+        }
         instrumentStates.removeValue(forKey: id)
         updateCurrentTrackIndices(for: id, value: [])
     }
