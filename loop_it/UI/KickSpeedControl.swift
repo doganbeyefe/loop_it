@@ -52,6 +52,7 @@ struct KickSpeedControl: View {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.bordered)
+                .tint(.red)
                 .accessibilityLabel("Delete pattern row")
             }
         }
