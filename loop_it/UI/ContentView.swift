@@ -11,7 +11,7 @@ struct ContentView: View {
     // MARK: - State
     @ObservedObject var audio: SoundFontKickEngine
     @State private var bpm: Double = 120
-    @State private var instrumentInstances: [InstrumentInstance] = [InstrumentInstance(instrument: .kick)]
+    @State private var instrumentInstances: [InstrumentInstance] = []
     @State private var patternsByInstance: [InstrumentInstance.ID: [KickPatternRow]] = [:]
     @State private var selectedInstanceID: InstrumentInstance.ID?
     @State private var selectedKickPreset: KickPreset = KickPreset.all[0]
@@ -92,9 +92,11 @@ private extension ContentView {
             Text("Loop It")
                 .font(.title2)
                 .bold()
-            Text("Tap + to add instruments")
+            
+            Text("Create music easily")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .padding(.bottom, 16)
 
             HStack {
                 Text("Instruments")
@@ -120,7 +122,7 @@ private extension ContentView {
     var instrumentList: some View {
         VStack(alignment: .leading, spacing: 12) {
             if instrumentInstances.isEmpty {
-                Text("No instruments added yet.")
+                Text("Tap + to add instruments")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
@@ -131,7 +133,7 @@ private extension ContentView {
                             Spacer()
                         }
                     }
-                    .padding(16)
+                    .padding(12)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color(.secondarySystemBackground))
