@@ -8,7 +8,6 @@ struct KickTrack: Equatable {
     var repeatCount: Int
 }
 
-@MainActor
 final class SoundFontKickEngine: ObservableObject {
 
     // MARK: - Published state
@@ -19,10 +18,12 @@ final class SoundFontKickEngine: ObservableObject {
     private let engine = AVAudioEngine()
     private let sampler = AVAudioUnitSampler()
     private var stepTimer: DispatchSourceTimer?
+    private let playbackQueue = DispatchQueue(label: "SoundFontKickEngine.playback")
 
     // MARK: - Playback configuration
     private var baseBpm: Double = 120
     var kickSpeedMultiplier: Double = 1.0 // 0.5, 1, 2, 4, ...
+    private var isRunningInternal = false
 
     // MARK: - SoundFont configuration
     private let soundFontName: String
@@ -100,30 +101,38 @@ final class SoundFontKickEngine: ObservableObject {
 
     // MARK: - Presets
     func setKickPreset(_ preset: KickPreset) {
-        // Reload kit only if needed.
-        if preset.program != currentProgram {
-            setDrumKitProgram(preset.program)
+        playbackQueue.async {
+            // Reload kit only if needed.
+            if preset.program != self.currentProgram {
+                self.setDrumKitProgram(preset.program)
+            }
+            // Update active note.
+            self.activeMIDINote = preset.midiNote
         }
-        // Update active note.
-        activeMIDINote = preset.midiNote
     }
 
     func setSnarePreset(_ preset: SnarePreset) {
-        if preset.program != currentProgram {
-            setDrumKitProgram(preset.program)
+        playbackQueue.async {
+            if preset.program != self.currentProgram {
+                self.setDrumKitProgram(preset.program)
+            }
+            self.activeMIDINote = preset.midiNote
         }
-        activeMIDINote = preset.midiNote
     }
 
     func setHiHatPreset(_ preset: HiHatPreset) {
-        if preset.program != currentProgram {
-            setDrumKitProgram(preset.program)
+        playbackQueue.async {
+            if preset.program != self.currentProgram {
+                self.setDrumKitProgram(preset.program)
+            }
+            self.activeMIDINote = preset.midiNote
         }
-        activeMIDINote = preset.midiNote
     }
 
     func playPreview() {
-        triggerNote()
+        playbackQueue.async {
+            self.triggerNote()
+        }
     }
 
     // MARK: - Trigger
@@ -145,57 +154,47 @@ final class SoundFontKickEngine: ObservableObject {
     }
 
     func start(bpm: Double, tracks: [KickTrack]) {
-        guard !isRunning, bpm > 0, !tracks.isEmpty else { return }
+        playbackQueue.async {
+            guard !self.isRunningInternal, bpm > 0, !tracks.isEmpty else { return }
 
-        baseBpm = bpm
-        isRunning = true
-        kickTracks = tracks
-        currentTrackIndexInternal = 0
-        currentStepIndex = 0
-        currentTrackIndex = 0
-        currentTrackRepeatRemaining = max(1, tracks[0].repeatCount)
+            self.baseBpm = bpm
+            self.isRunningInternal = true
+            self.updateIsRunning(true)
+            self.kickTracks = tracks
+            self.currentTrackIndexInternal = 0
+            self.currentStepIndex = 0
+            self.updateCurrentTrackIndex(0)
+            self.currentTrackRepeatRemaining = max(1, tracks[0].repeatCount)
 
-        startKickTimer()
+            self.startKickTimer()
+        }
     }
     
     func setKickSpeedMultiplier(_ newValue: Double) {
-        // Clamp to sensible values.
-        let clamped = min(max(newValue, 0.25), 8.0)
-        kickSpeedMultiplier = clamped
+        playbackQueue.async {
+            // Clamp to sensible values.
+            let clamped = min(max(newValue, 0.25), 8.0)
+            self.kickSpeedMultiplier = clamped
 
-        // If running, restart timer with new interval.
-        if isRunning {
-            updateKickTracks([
-                KickTrack(pattern: kickPattern, speedMultiplier: kickSpeedMultiplier, repeatCount: 1)
-            ])
+            // If running, restart timer with new interval.
+            if self.isRunningInternal {
+                self.updateKickTracksOnQueue([
+                    KickTrack(pattern: self.kickPattern, speedMultiplier: self.kickSpeedMultiplier, repeatCount: 1)
+                ])
+            }
         }
     }
 
     func updateKickTracks(_ tracks: [KickTrack]) {
-        kickTracks = tracks
-        if isRunning {
-            guard !tracks.isEmpty else {
-                stop()
-                return
-            }
-            if currentTrackIndexInternal >= tracks.count {
-                currentTrackIndexInternal = 0
-                currentStepIndex = 0
-                currentTrackIndex = 0
-            }
-            currentTrackRepeatRemaining = max(1, tracks[currentTrackIndexInternal].repeatCount)
-            startKickTimer()
+        playbackQueue.async {
+            self.updateKickTracksOnQueue(tracks)
         }
     }
 
     func stop() {
-        isRunning = false
-        stopKickTimer()
-        currentTrackIndex = nil
-        currentTrackIndexInternal = 0
-        currentStepIndex = 0
-        currentTrackRepeatRemaining = 1
-        sampler.sendController(123, withValue: 0, onChannel: midiChannel)
+        playbackQueue.async {
+            self.stopOnQueue()
+        }
     }
 
     // MARK: - Timer control
@@ -208,7 +207,7 @@ final class SoundFontKickEngine: ObservableObject {
         let effectiveBpm = max(1, baseBpm * track.speedMultiplier)
         let interval = 60.0 / effectiveBpm
 
-        let timer = DispatchSource.makeTimerSource(queue: .main)
+        let timer = DispatchSource.makeTimerSource(queue: playbackQueue)
         let deadline: DispatchTime = startImmediately ? .now() : .now() + interval
         timer.schedule(deadline: deadline, repeating: interval)
         timer.setEventHandler { [weak self] in
@@ -232,7 +231,7 @@ final class SoundFontKickEngine: ObservableObject {
                     self.currentTrackRepeatRemaining -= 1
                 } else {
                     self.currentTrackIndexInternal = (self.currentTrackIndexInternal + 1) % self.kickTracks.count
-                    self.currentTrackIndex = self.currentTrackIndexInternal
+                    self.updateCurrentTrackIndex(self.currentTrackIndexInternal)
                     self.currentTrackRepeatRemaining = max(
                         1,
                         self.kickTracks[self.currentTrackIndexInternal].repeatCount
@@ -251,5 +250,45 @@ final class SoundFontKickEngine: ObservableObject {
     private func stopKickTimer() {
         stepTimer?.cancel()
         stepTimer = nil
+    }
+
+    private func updateKickTracksOnQueue(_ tracks: [KickTrack]) {
+        kickTracks = tracks
+        if isRunningInternal {
+            guard !tracks.isEmpty else {
+                stopOnQueue()
+                return
+            }
+            if currentTrackIndexInternal >= tracks.count {
+                currentTrackIndexInternal = 0
+                currentStepIndex = 0
+                updateCurrentTrackIndex(0)
+            }
+            currentTrackRepeatRemaining = max(1, tracks[currentTrackIndexInternal].repeatCount)
+            startKickTimer()
+        }
+    }
+
+    private func stopOnQueue() {
+        isRunningInternal = false
+        updateIsRunning(false)
+        stopKickTimer()
+        updateCurrentTrackIndex(nil)
+        currentTrackIndexInternal = 0
+        currentStepIndex = 0
+        currentTrackRepeatRemaining = 1
+        sampler.sendController(123, withValue: 0, onChannel: midiChannel)
+    }
+
+    private func updateIsRunning(_ value: Bool) {
+        DispatchQueue.main.async {
+            self.isRunning = value
+        }
+    }
+
+    private func updateCurrentTrackIndex(_ value: Int?) {
+        DispatchQueue.main.async {
+            self.currentTrackIndex = value
+        }
     }
 }
