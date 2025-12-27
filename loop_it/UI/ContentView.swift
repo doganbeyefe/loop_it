@@ -24,8 +24,8 @@ struct ContentView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                headerSection
                 presetSection
+                headerSection
                 patternSection
             }
             .frame(maxWidth: .infinity, alignment: .leading)
