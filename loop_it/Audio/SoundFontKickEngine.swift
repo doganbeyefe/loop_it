@@ -9,10 +9,13 @@ struct KickTrack: Equatable {
 }
 
 final class SoundFontKickEngine: ObservableObject {
+    private static var isRunningInPreview: Bool {
+        ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+    }
 
     // MARK: - Published state
     @Published var isRunning = false
-    @Published var currentTrackIndices: [DrumInstrument: Set<Int>] = [:]
+    @Published var currentTrackIndices: [UUID: Set<Int>] = [:]
 
     // MARK: - Audio engine plumbing
     private let engine = AVAudioEngine()
@@ -35,6 +38,7 @@ final class SoundFontKickEngine: ObservableObject {
     private var sf2URL: URL?
 
     private final class InstrumentState {
+        let instrument: DrumInstrument
         let sampler: AVAudioUnitSampler
         var midiNote: UInt8
         var program: UInt8
@@ -52,38 +56,29 @@ final class SoundFontKickEngine: ObservableObject {
 
         var trackStates: [TrackState] = []
 
-        init(sampler: AVAudioUnitSampler, midiNote: UInt8 = 36, program: UInt8 = 0) {
+        init(instrument: DrumInstrument, sampler: AVAudioUnitSampler, midiNote: UInt8 = 36, program: UInt8 = 0) {
+            self.instrument = instrument
             self.sampler = sampler
             self.midiNote = midiNote
             self.program = program
         }
     }
 
-    private var instrumentStates: [DrumInstrument: InstrumentState] = [:]
+    private var instrumentStates: [UUID: InstrumentState] = [:]
 
     // MARK: - Sequencing state
     init(soundFontName: String = "GeneralUser-GS", soundFontExtension: String = "sf2") {
         self.soundFontName = soundFontName
         self.soundFontExtension = soundFontExtension
 
+        guard !Self.isRunningInPreview else { return }
+
         setupAudio()
         loadSoundFontURL()
-
-        // Default kit: Standard 1.
-        DrumInstrument.allCases.forEach { instrument in
-            setDrumKitProgram(for: instrument, program: 0)
-        }
     }
 
     // MARK: - Setup
     private func setupAudio() {
-        DrumInstrument.allCases.forEach { instrument in
-            let sampler = AVAudioUnitSampler()
-            instrumentStates[instrument] = InstrumentState(sampler: sampler)
-            engine.attach(sampler)
-            engine.connect(sampler, to: engine.mainMixerNode, format: nil)
-        }
-
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
             try AVAudioSession.sharedInstance().setActive(true)
@@ -103,27 +98,27 @@ final class SoundFontKickEngine: ObservableObject {
     }
 
     // MARK: - Drum kit loading
-    func setKickPreset(_ preset: KickPreset) {
-        setPreset(program: preset.program, midiNote: preset.midiNote, instrument: .kick)
+    func setKickPreset(_ preset: KickPreset, for instanceID: UUID) {
+        setPreset(program: preset.program, midiNote: preset.midiNote, for: instanceID)
     }
 
-    func setSnarePreset(_ preset: SnarePreset) {
-        setPreset(program: preset.program, midiNote: preset.midiNote, instrument: .snare)
+    func setSnarePreset(_ preset: SnarePreset, for instanceID: UUID) {
+        setPreset(program: preset.program, midiNote: preset.midiNote, for: instanceID)
     }
 
-    func setHiHatPreset(_ preset: HiHatPreset) {
-        setPreset(program: preset.program, midiNote: preset.midiNote, instrument: .hiHat)
+    func setHiHatPreset(_ preset: HiHatPreset, for instanceID: UUID) {
+        setPreset(program: preset.program, midiNote: preset.midiNote, for: instanceID)
     }
 
-    func playPreview(for instrument: DrumInstrument) {
+    func playPreview(for instanceID: UUID) {
         playbackQueue.async {
-            self.triggerNote(for: instrument)
+            self.triggerNote(for: instanceID)
         }
     }
 
     // MARK: - Trigger
-    private func triggerNote(for instrument: DrumInstrument) {
-        guard let state = instrumentStates[instrument] else { return }
+    private func triggerNote(for instanceID: UUID) {
+        guard let state = instrumentStates[instanceID] else { return }
         state.sampler.startNote(state.midiNote, withVelocity: velocity, onChannel: midiChannel)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
@@ -133,38 +128,40 @@ final class SoundFontKickEngine: ObservableObject {
     }
 
     // MARK: - Transport
-    func start(bpm: Double, tracksByInstrument: [DrumInstrument: [KickTrack]]) {
+    func start(bpm: Double, tracksByInstance: [UUID: [KickTrack]]) {
         playbackQueue.async {
-            guard !self.isRunningInternal, bpm > 0, !tracksByInstrument.isEmpty else { return }
+            guard !self.isRunningInternal, bpm > 0, !tracksByInstance.isEmpty else { return }
 
             self.baseBpm = bpm
             self.isRunningInternal = true
             self.updateIsRunning(true)
 
-            tracksByInstrument.forEach { instrument, tracks in
-                self.configureInstrument(instrument, tracks: tracks)
+            self.instrumentStates.keys.forEach { instanceID in
+                let tracks = tracksByInstance[instanceID] ?? []
+                self.configureInstance(instanceID, tracks: tracks)
             }
         }
     }
 
-    func updateSession(bpm: Double, tracksByInstrument: [DrumInstrument: [KickTrack]]) {
+    func updateSession(bpm: Double, tracksByInstance: [UUID: [KickTrack]]) {
         playbackQueue.async {
             self.stopOnQueue()
-            guard bpm > 0, !tracksByInstrument.isEmpty else { return }
+            guard bpm > 0, !tracksByInstance.isEmpty else { return }
 
             self.baseBpm = bpm
             self.isRunningInternal = true
             self.updateIsRunning(true)
 
-            tracksByInstrument.forEach { instrument, tracks in
-                self.configureInstrument(instrument, tracks: tracks)
+            self.instrumentStates.keys.forEach { instanceID in
+                let tracks = tracksByInstance[instanceID] ?? []
+                self.configureInstance(instanceID, tracks: tracks)
             }
         }
     }
 
-    func updateInstrumentTracks(_ instrument: DrumInstrument, tracks: [KickTrack]) {
+    func updateInstrumentTracks(_ instanceID: UUID, tracks: [KickTrack]) {
         playbackQueue.async {
-            self.updateInstrumentTracksOnQueue(instrument, tracks: tracks)
+            self.updateInstrumentTracksOnQueue(instanceID, tracks: tracks)
         }
     }
 
@@ -176,11 +173,11 @@ final class SoundFontKickEngine: ObservableObject {
 
     // MARK: - Timer control
     private func startTrackTimer(
-        for instrument: DrumInstrument,
+        for instanceID: UUID,
         trackIndex: Int,
         startImmediately: Bool = true
     ) {
-        guard let state = instrumentStates[instrument],
+        guard let state = instrumentStates[instanceID],
               state.trackStates.indices.contains(trackIndex) else { return }
 
         let trackState = state.trackStates[trackIndex]
@@ -192,7 +189,7 @@ final class SoundFontKickEngine: ObservableObject {
         timer.schedule(deadline: deadline, repeating: interval)
         timer.setEventHandler { [weak self] in
             guard let self,
-                  let state = self.instrumentStates[instrument],
+                  let state = self.instrumentStates[instanceID],
                   state.trackStates.indices.contains(trackIndex) else { return }
 
             let activeTrackState = state.trackStates[trackIndex]
@@ -201,7 +198,7 @@ final class SoundFontKickEngine: ObservableObject {
 
             if pattern.indices.contains(activeTrackState.currentStepIndex),
                pattern[activeTrackState.currentStepIndex] {
-                self.triggerNote(for: instrument)
+                self.triggerNote(for: instanceID)
             }
 
             let nextStep = activeTrackState.currentStepIndex + 1
@@ -222,8 +219,8 @@ final class SoundFontKickEngine: ObservableObject {
         timer.resume()
     }
 
-    private func stopInstrumentTimer(for instrument: DrumInstrument) {
-        instrumentStates[instrument]?.trackStates.forEach { trackState in
+    private func stopInstrumentTimer(for instanceID: UUID) {
+        instrumentStates[instanceID]?.trackStates.forEach { trackState in
             trackState.timer?.cancel()
             trackState.timer = nil
         }
@@ -232,9 +229,9 @@ final class SoundFontKickEngine: ObservableObject {
     private func stopOnQueue() {
         isRunningInternal = false
         updateIsRunning(false)
-        instrumentStates.keys.forEach { instrument in
-            stopInstrumentTimer(for: instrument)
-            updateCurrentTrackIndices(for: instrument, value: [])
+        instrumentStates.keys.forEach { instanceID in
+            stopInstrumentTimer(for: instanceID)
+            updateCurrentTrackIndices(for: instanceID, value: [])
         }
         instrumentStates.values.forEach { state in
             state.trackStates = []
@@ -248,25 +245,25 @@ final class SoundFontKickEngine: ObservableObject {
         }
     }
 
-    private func updateCurrentTrackIndices(for instrument: DrumInstrument, value: Set<Int>) {
+    private func updateCurrentTrackIndices(for instanceID: UUID, value: Set<Int>) {
         DispatchQueue.main.async {
-            self.currentTrackIndices[instrument] = value
+            self.currentTrackIndices[instanceID] = value
         }
     }
 
     // MARK: - Instrument setup
-    private func setPreset(program: UInt8, midiNote: UInt8, instrument: DrumInstrument) {
+    private func setPreset(program: UInt8, midiNote: UInt8, for instanceID: UUID) {
         playbackQueue.async {
-            guard let state = self.instrumentStates[instrument] else { return }
+            guard let state = self.instrumentStates[instanceID] else { return }
             if program != state.program {
-                self.setDrumKitProgram(for: instrument, program: program)
+                self.setDrumKitProgram(for: instanceID, program: program)
             }
             state.midiNote = midiNote
         }
     }
 
-    private func setDrumKitProgram(for instrument: DrumInstrument, program: UInt8) {
-        guard let url = sf2URL, let state = instrumentStates[instrument] else { return }
+    private func setDrumKitProgram(for instanceID: UUID, program: UInt8) {
+        guard let url = sf2URL, let state = instrumentStates[instanceID] else { return }
 
         do {
             try state.sampler.loadSoundBankInstrument(
@@ -276,38 +273,38 @@ final class SoundFontKickEngine: ObservableObject {
                 bankLSB: 0
             )
             state.program = program
-            print("✅ Drum kit loaded program:", program, "for", instrument.rawValue)
+            print("✅ Drum kit loaded program:", program, "for", state.instrument.rawValue)
         } catch {
-            print("❌ Failed to load drum kit program \(program) for \(instrument.rawValue):", error)
+            print("❌ Failed to load drum kit program \(program) for \(state.instrument.rawValue):", error)
         }
     }
 
-    private func configureInstrument(_ instrument: DrumInstrument, tracks: [KickTrack]) {
-        guard let state = instrumentStates[instrument] else { return }
-        stopInstrumentTimer(for: instrument)
+    private func configureInstance(_ instanceID: UUID, tracks: [KickTrack]) {
+        guard let state = instrumentStates[instanceID] else { return }
+        stopInstrumentTimer(for: instanceID)
         state.trackStates = tracks.map { InstrumentState.TrackState(track: $0) }
         guard !tracks.isEmpty else {
-            updateCurrentTrackIndices(for: instrument, value: [])
+            updateCurrentTrackIndices(for: instanceID, value: [])
             return
         }
 
-        updateCurrentTrackIndices(for: instrument, value: Set(tracks.indices))
+        updateCurrentTrackIndices(for: instanceID, value: Set(tracks.indices))
         tracks.indices.forEach { index in
-            startTrackTimer(for: instrument, trackIndex: index)
+            startTrackTimer(for: instanceID, trackIndex: index)
         }
     }
 
-    private func updateInstrumentTracksOnQueue(_ instrument: DrumInstrument, tracks: [KickTrack]) {
-        guard let state = instrumentStates[instrument] else { return }
-        stopInstrumentTimer(for: instrument)
+    private func updateInstrumentTracksOnQueue(_ instanceID: UUID, tracks: [KickTrack]) {
+        guard let state = instrumentStates[instanceID] else { return }
+        stopInstrumentTimer(for: instanceID)
         state.trackStates = tracks.map { InstrumentState.TrackState(track: $0) }
         if isRunningInternal {
             if tracks.isEmpty {
-                updateCurrentTrackIndices(for: instrument, value: [])
+                updateCurrentTrackIndices(for: instanceID, value: [])
             } else {
-                updateCurrentTrackIndices(for: instrument, value: Set(tracks.indices))
+                updateCurrentTrackIndices(for: instanceID, value: Set(tracks.indices))
                 tracks.indices.forEach { index in
-                    startTrackTimer(for: instrument, trackIndex: index)
+                    startTrackTimer(for: instanceID, trackIndex: index)
                 }
             }
             refreshRunningState()
@@ -319,5 +316,60 @@ final class SoundFontKickEngine: ObservableObject {
         if !hasActiveTracks {
             stopOnQueue()
         }
+    }
+
+    // MARK: - Instance management
+    func syncInstrumentInstances(_ instances: [(UUID, DrumInstrument)]) {
+        guard !Self.isRunningInPreview else { return }
+        playbackQueue.async {
+            let desiredIDs = Set(instances.map { $0.0 })
+            let existingIDs = Set(self.instrumentStates.keys)
+            let removedIDs = existingIDs.subtracting(desiredIDs)
+            let newInstances = instances.filter { self.instrumentStates[$0.0] == nil }
+
+            removedIDs.forEach { self.removeInstrumentInstanceOnQueue($0) }
+            newInstances.forEach { self.addInstrumentInstanceOnQueue(id: $0.0, instrument: $0.1) }
+        }
+    }
+
+    private func addInstrumentInstanceOnQueue(id: UUID, instrument: DrumInstrument) {
+        guard instrumentStates[id] == nil else { return }
+        let sampler = AVAudioUnitSampler()
+        let state = InstrumentState(instrument: instrument, sampler: sampler)
+        instrumentStates[id] = state
+        let wasRunning = engine.isRunning
+        if wasRunning {
+            engine.stop()
+        }
+        engine.attach(sampler)
+        engine.connect(sampler, to: engine.mainMixerNode, format: nil)
+        if wasRunning {
+            do {
+                try engine.start()
+            } catch {
+                print("❌ Audio restart error:", error)
+            }
+        }
+        setDrumKitProgram(for: id, program: 0)
+    }
+
+    private func removeInstrumentInstanceOnQueue(_ id: UUID) {
+        guard let state = instrumentStates[id] else { return }
+        stopInstrumentTimer(for: id)
+        state.sampler.sendController(123, withValue: 0, onChannel: midiChannel)
+        let wasRunning = engine.isRunning
+        if wasRunning {
+            engine.stop()
+        }
+        engine.detach(state.sampler)
+        if wasRunning {
+            do {
+                try engine.start()
+            } catch {
+                print("❌ Audio restart error:", error)
+            }
+        }
+        instrumentStates.removeValue(forKey: id)
+        updateCurrentTrackIndices(for: id, value: [])
     }
 }
