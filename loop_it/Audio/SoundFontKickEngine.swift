@@ -301,4 +301,3 @@ final class SoundFontKickEngine: ObservableObject {
         }
     }
 }
-}
