@@ -139,6 +139,21 @@ final class SoundFontKickEngine: ObservableObject {
         }
     }
 
+    func updateSession(bpm: Double, tracksByInstrument: [DrumInstrument: [KickTrack]]) {
+        playbackQueue.async {
+            self.stopOnQueue()
+            guard bpm > 0, !tracksByInstrument.isEmpty else { return }
+
+            self.baseBpm = bpm
+            self.isRunningInternal = true
+            self.updateIsRunning(true)
+
+            tracksByInstrument.forEach { instrument, tracks in
+                self.configureInstrument(instrument, tracks: tracks)
+            }
+        }
+    }
+
     func updateInstrumentTracks(_ instrument: DrumInstrument, tracks: [KickTrack]) {
         playbackQueue.async {
             self.updateInstrumentTracksOnQueue(instrument, tracks: tracks)
