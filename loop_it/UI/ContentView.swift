@@ -14,9 +14,9 @@ struct ContentView: View {
     @State private var instrumentInstances: [InstrumentInstance] = []
     @State private var patternsByInstance: [InstrumentInstance.ID: [KickPatternRow]] = [:]
     @State private var selectedInstanceID: InstrumentInstance.ID?
-    @State private var selectedKickPreset: KickPreset = KickPreset.all[0]
-    @State private var selectedSnarePreset: SnarePreset = SnarePreset.all[0]
-    @State private var selectedHiHatPreset: HiHatPreset = HiHatPreset.all[0]
+    @State private var kickPresetsByInstance: [InstrumentInstance.ID: KickPreset] = [:]
+    @State private var snarePresetsByInstance: [InstrumentInstance.ID: SnarePreset] = [:]
+    @State private var hiHatPresetsByInstance: [InstrumentInstance.ID: HiHatPreset] = [:]
     private let bpmFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .none
@@ -45,6 +45,7 @@ struct ContentView: View {
         .onChange(of: instrumentInstances) { _, _ in
             ensureSelectedInstance()
             ensurePatternsForInstances()
+            ensurePresetsForInstances()
         }
     }
 }
@@ -221,11 +222,13 @@ private extension ContentView {
             return AnyView(
                 headerSection(
                     title: instanceTitle(for: .kick),
-                    selectedPreset: $selectedKickPreset,
+                    selectedPreset: bindingForKickPreset(),
                     presets: KickPreset.all,
                     onPreview: {
-                        audio.setKickPreset(selectedKickPreset)
-                        audio.playPreview(for: .kick)
+                        guard let selectedInstance else { return }
+                        let preset = kickPresetsByInstance[selectedInstance.id] ?? KickPreset.all[0]
+                        audio.setPreset(preset, for: selectedInstance.id)
+                        audio.playPreview(for: selectedInstance.id)
                     }
                 )
             )
@@ -233,11 +236,13 @@ private extension ContentView {
             return AnyView(
                 headerSection(
                     title: instanceTitle(for: .snare),
-                    selectedPreset: $selectedSnarePreset,
+                    selectedPreset: bindingForSnarePreset(),
                     presets: SnarePreset.all,
                     onPreview: {
-                        audio.setSnarePreset(selectedSnarePreset)
-                        audio.playPreview(for: .snare)
+                        guard let selectedInstance else { return }
+                        let preset = snarePresetsByInstance[selectedInstance.id] ?? SnarePreset.all[0]
+                        audio.setPreset(preset, for: selectedInstance.id)
+                        audio.playPreview(for: selectedInstance.id)
                     }
                 )
             )
@@ -245,11 +250,13 @@ private extension ContentView {
             return AnyView(
                 headerSection(
                     title: instanceTitle(for: .hiHat),
-                    selectedPreset: $selectedHiHatPreset,
+                    selectedPreset: bindingForHiHatPreset(),
                     presets: HiHatPreset.all,
                     onPreview: {
-                        audio.setHiHatPreset(selectedHiHatPreset)
-                        audio.playPreview(for: .hiHat)
+                        guard let selectedInstance else { return }
+                        let preset = hiHatPresetsByInstance[selectedInstance.id] ?? HiHatPreset.all[0]
+                        audio.setPreset(preset, for: selectedInstance.id)
+                        audio.playPreview(for: selectedInstance.id)
                     }
                 )
             )
@@ -264,8 +271,7 @@ private extension ContentView {
         return AnyView(
             patternSection(
                 for: patternsBinding,
-                instrument: selectedInstance.instrument,
-                offset: trackOffset(for: selectedInstance),
+                instanceID: selectedInstance.id,
                 onDelete: removePattern
             )
         )
@@ -306,14 +312,13 @@ private extension ContentView {
 
     func patternSection(
         for patterns: Binding<[KickPatternRow]>,
-        instrument: DrumInstrument,
-        offset: Int,
+        instanceID: InstrumentInstance.ID,
         onDelete: @escaping (KickPatternRow.ID) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(patterns) { $pattern in
                 let localIndex = patterns.wrappedValue.firstIndex(where: { $0.id == pattern.id }) ?? 0
-                let isActive = audio.currentTrackIndices[instrument]?.contains(offset + localIndex) == true
+                let isActive = audio.currentTrackIndices[instanceID]?.contains(localIndex) == true
                 HStack(spacing: 16) {
                     KickPatternView(steps: $pattern.steps)
                     Spacer()
@@ -356,7 +361,7 @@ private extension ContentView {
     func initializeStateIfNeeded() {
         ensurePatternsForInstances()
         ensureSelectedInstance()
-        applyAllPresets()
+        ensurePresetsForInstances()
     }
 
     func ensureSelectedInstance() {
@@ -371,6 +376,55 @@ private extension ContentView {
                 patternsByInstance[instance.id] = [KickPatternRow()]
             }
         }
+    }
+
+    func ensurePresetsForInstances() {
+        instrumentInstances.forEach { instance in
+            switch instance.instrument {
+            case .kick:
+                let preset = kickPresetsByInstance[instance.id] ?? KickPreset.all[0]
+                kickPresetsByInstance[instance.id] = preset
+                audio.registerInstrument(id: instance.id, instrument: .kick, preset: preset)
+            case .snare:
+                let preset = snarePresetsByInstance[instance.id] ?? SnarePreset.all[0]
+                snarePresetsByInstance[instance.id] = preset
+                audio.registerInstrument(id: instance.id, instrument: .snare, preset: preset)
+            case .hiHat:
+                let preset = hiHatPresetsByInstance[instance.id] ?? HiHatPreset.all[0]
+                hiHatPresetsByInstance[instance.id] = preset
+                audio.registerInstrument(id: instance.id, instrument: .hiHat, preset: preset)
+            }
+        }
+    }
+
+    func bindingForKickPreset() -> Binding<KickPreset> {
+        guard let selectedInstance else {
+            return .constant(KickPreset.all[0])
+        }
+        return Binding(
+            get: { kickPresetsByInstance[selectedInstance.id] ?? KickPreset.all[0] },
+            set: { kickPresetsByInstance[selectedInstance.id] = $0 }
+        )
+    }
+
+    func bindingForSnarePreset() -> Binding<SnarePreset> {
+        guard let selectedInstance else {
+            return .constant(SnarePreset.all[0])
+        }
+        return Binding(
+            get: { snarePresetsByInstance[selectedInstance.id] ?? SnarePreset.all[0] },
+            set: { snarePresetsByInstance[selectedInstance.id] = $0 }
+        )
+    }
+
+    func bindingForHiHatPreset() -> Binding<HiHatPreset> {
+        guard let selectedInstance else {
+            return .constant(HiHatPreset.all[0])
+        }
+        return Binding(
+            get: { hiHatPresetsByInstance[selectedInstance.id] ?? HiHatPreset.all[0] },
+            set: { hiHatPresetsByInstance[selectedInstance.id] = $0 }
+        )
     }
 
     func bindingForPatterns(instanceID: InstrumentInstance.ID) -> Binding<[KickPatternRow]> {
@@ -389,18 +443,6 @@ private extension ContentView {
         let matches = instrumentInstances.filter { $0.instrument == instance.instrument }
         let index = matches.firstIndex { $0.id == instance.id } ?? 0
         return index + 1
-    }
-
-    func trackOffset(for instance: InstrumentInstance) -> Int {
-        var offset = 0
-        for item in instrumentInstances {
-            if item.id == instance.id {
-                break
-            }
-            guard item.instrument == instance.instrument else { continue }
-            offset += patternsByInstance[item.id]?.count ?? 0
-        }
-        return offset
     }
 
     func instanceTitle(for instrument: DrumInstrument) -> String {
@@ -432,23 +474,33 @@ private extension ContentView {
         }
     }
 
-    func applyAllPresets() {
-        audio.setKickPreset(selectedKickPreset)
-        audio.setSnarePreset(selectedSnarePreset)
-        audio.setHiHatPreset(selectedHiHatPreset)
-    }
-
     func applyUpdate() {
         applyAllPresets()
         audio.updateSession(bpm: bpm, tracksByInstrument: tracksByInstrument())
     }
 
-    func tracksByInstrument() -> [DrumInstrument: [KickTrack]] {
-        var mapping: [DrumInstrument: [KickTrack]] = [:]
+    func applyAllPresets() {
+        instrumentInstances.forEach { instance in
+            switch instance.instrument {
+            case .kick:
+                let preset = kickPresetsByInstance[instance.id] ?? KickPreset.all[0]
+                audio.setPreset(preset, for: instance.id)
+            case .snare:
+                let preset = snarePresetsByInstance[instance.id] ?? SnarePreset.all[0]
+                audio.setPreset(preset, for: instance.id)
+            case .hiHat:
+                let preset = hiHatPresetsByInstance[instance.id] ?? HiHatPreset.all[0]
+                audio.setPreset(preset, for: instance.id)
+            }
+        }
+    }
+
+    func tracksByInstrument() -> [InstrumentInstance.ID: [KickTrack]] {
+        var mapping: [InstrumentInstance.ID: [KickTrack]] = [:]
         for instance in instrumentInstances {
             let patterns = patternsByInstance[instance.id] ?? []
             let tracks = tracks(for: patterns)
-            mapping[instance.instrument, default: []].append(contentsOf: tracks)
+            mapping[instance.id] = tracks
         }
         return mapping
     }
@@ -457,6 +509,20 @@ private extension ContentView {
         let newInstance = InstrumentInstance(instrument: instrument)
         instrumentInstances.append(newInstance)
         patternsByInstance[newInstance.id] = [KickPatternRow()]
+        switch instrument {
+        case .kick:
+            let preset = KickPreset.all[0]
+            kickPresetsByInstance[newInstance.id] = preset
+            audio.registerInstrument(id: newInstance.id, instrument: .kick, preset: preset)
+        case .snare:
+            let preset = SnarePreset.all[0]
+            snarePresetsByInstance[newInstance.id] = preset
+            audio.registerInstrument(id: newInstance.id, instrument: .snare, preset: preset)
+        case .hiHat:
+            let preset = HiHatPreset.all[0]
+            hiHatPresetsByInstance[newInstance.id] = preset
+            audio.registerInstrument(id: newInstance.id, instrument: .hiHat, preset: preset)
+        }
         selectedInstanceID = newInstance.id
     }
 
