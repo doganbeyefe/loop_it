@@ -12,7 +12,7 @@ final class SoundFontKickEngine: ObservableObject {
 
     // MARK: - Published state
     @Published var isRunning = false
-    @Published var currentTrackIndices: [DrumInstrument: Int?] = [:]
+    @Published var currentTrackIndices: [DrumInstrument: Set<Int>] = [:]
 
     // MARK: - Audio engine plumbing
     private let engine = AVAudioEngine()
@@ -38,11 +38,19 @@ final class SoundFontKickEngine: ObservableObject {
         let sampler: AVAudioUnitSampler
         var midiNote: UInt8
         var program: UInt8
-        var tracks: [KickTrack] = []
-        var timer: DispatchSourceTimer?
-        var currentTrackIndex: Int = 0
-        var currentStepIndex: Int = 0
-        var currentTrackRepeatRemaining: Int = 1
+        final class TrackState {
+            let track: KickTrack
+            var timer: DispatchSourceTimer?
+            var currentStepIndex: Int = 0
+            var repeatRemaining: Int
+
+            init(track: KickTrack) {
+                self.track = track
+                self.repeatRemaining = max(1, track.repeatCount)
+            }
+        }
+
+        var trackStates: [TrackState] = []
 
         init(sampler: AVAudioUnitSampler, midiNote: UInt8 = 36, program: UInt8 = 0) {
             self.sampler = sampler
@@ -167,55 +175,58 @@ final class SoundFontKickEngine: ObservableObject {
     }
 
     // MARK: - Timer control
-    private func startInstrumentTimer(for instrument: DrumInstrument, startImmediately: Bool = true) {
-        stopInstrumentTimer(for: instrument)
+    private func startTrackTimer(
+        for instrument: DrumInstrument,
+        trackIndex: Int,
+        startImmediately: Bool = true
+    ) {
+        guard let state = instrumentStates[instrument],
+              state.trackStates.indices.contains(trackIndex) else { return }
 
-        guard let state = instrumentStates[instrument], !state.tracks.isEmpty else { return }
-
-        let track = state.tracks[state.currentTrackIndex]
-        let effectiveBpm = max(1, baseBpm * track.speedMultiplier)
+        let trackState = state.trackStates[trackIndex]
+        let effectiveBpm = max(1, baseBpm * trackState.track.speedMultiplier)
         let interval = 60.0 / effectiveBpm
 
         let timer = DispatchSource.makeTimerSource(queue: playbackQueue)
         let deadline: DispatchTime = startImmediately ? .now() : .now() + interval
         timer.schedule(deadline: deadline, repeating: interval)
         timer.setEventHandler { [weak self] in
-            guard let self, let state = self.instrumentStates[instrument], !state.tracks.isEmpty else { return }
+            guard let self,
+                  let state = self.instrumentStates[instrument],
+                  state.trackStates.indices.contains(trackIndex) else { return }
 
-            let pattern = state.tracks[state.currentTrackIndex].pattern
+            let activeTrackState = state.trackStates[trackIndex]
+            let pattern = activeTrackState.track.pattern
             let safePatternLength = max(pattern.count, 1)
 
-            if pattern.indices.contains(state.currentStepIndex),
-               pattern[state.currentStepIndex] {
+            if pattern.indices.contains(activeTrackState.currentStepIndex),
+               pattern[activeTrackState.currentStepIndex] {
                 self.triggerNote(for: instrument)
             }
 
-            let nextStep = state.currentStepIndex + 1
+            let nextStep = activeTrackState.currentStepIndex + 1
             if nextStep >= safePatternLength {
-                state.currentStepIndex = 0
-                if state.currentTrackRepeatRemaining > 1 {
-                    state.currentTrackRepeatRemaining -= 1
+                activeTrackState.currentStepIndex = 0
+                if activeTrackState.repeatRemaining > 1 {
+                    activeTrackState.repeatRemaining -= 1
                 } else {
-                    state.currentTrackIndex = (state.currentTrackIndex + 1) % state.tracks.count
-                    self.updateCurrentTrackIndex(for: instrument, value: state.currentTrackIndex)
-                    state.currentTrackRepeatRemaining = max(
-                        1,
-                        state.tracks[state.currentTrackIndex].repeatCount
-                    )
+                    activeTrackState.repeatRemaining = max(1, activeTrackState.track.repeatCount)
                 }
-                self.startInstrumentTimer(for: instrument, startImmediately: false)
             } else {
-                state.currentStepIndex = nextStep
+                activeTrackState.currentStepIndex = nextStep
             }
         }
 
-        state.timer = timer
+        trackState.timer?.cancel()
+        trackState.timer = timer
         timer.resume()
     }
 
     private func stopInstrumentTimer(for instrument: DrumInstrument) {
-        instrumentStates[instrument]?.timer?.cancel()
-        instrumentStates[instrument]?.timer = nil
+        instrumentStates[instrument]?.trackStates.forEach { trackState in
+            trackState.timer?.cancel()
+            trackState.timer = nil
+        }
     }
 
     private func stopOnQueue() {
@@ -223,13 +234,10 @@ final class SoundFontKickEngine: ObservableObject {
         updateIsRunning(false)
         instrumentStates.keys.forEach { instrument in
             stopInstrumentTimer(for: instrument)
-            updateCurrentTrackIndex(for: instrument, value: nil)
+            updateCurrentTrackIndices(for: instrument, value: [])
         }
         instrumentStates.values.forEach { state in
-            state.currentTrackIndex = 0
-            state.currentStepIndex = 0
-            state.currentTrackRepeatRemaining = 1
-            state.tracks = []
+            state.trackStates = []
             state.sampler.sendController(123, withValue: 0, onChannel: midiChannel)
         }
     }
@@ -240,7 +248,7 @@ final class SoundFontKickEngine: ObservableObject {
         }
     }
 
-    private func updateCurrentTrackIndex(for instrument: DrumInstrument, value: Int?) {
+    private func updateCurrentTrackIndices(for instrument: DrumInstrument, value: Set<Int>) {
         DispatchQueue.main.async {
             self.currentTrackIndices[instrument] = value
         }
@@ -276,41 +284,38 @@ final class SoundFontKickEngine: ObservableObject {
 
     private func configureInstrument(_ instrument: DrumInstrument, tracks: [KickTrack]) {
         guard let state = instrumentStates[instrument] else { return }
-        state.tracks = tracks
+        stopInstrumentTimer(for: instrument)
+        state.trackStates = tracks.map { InstrumentState.TrackState(track: $0) }
         guard !tracks.isEmpty else {
-            updateCurrentTrackIndex(for: instrument, value: nil)
+            updateCurrentTrackIndices(for: instrument, value: [])
             return
         }
 
-        state.currentTrackIndex = 0
-        state.currentStepIndex = 0
-        updateCurrentTrackIndex(for: instrument, value: 0)
-        state.currentTrackRepeatRemaining = max(1, tracks[0].repeatCount)
-        startInstrumentTimer(for: instrument)
+        updateCurrentTrackIndices(for: instrument, value: Set(tracks.indices))
+        tracks.indices.forEach { index in
+            startTrackTimer(for: instrument, trackIndex: index)
+        }
     }
 
     private func updateInstrumentTracksOnQueue(_ instrument: DrumInstrument, tracks: [KickTrack]) {
         guard let state = instrumentStates[instrument] else { return }
-        state.tracks = tracks
+        stopInstrumentTimer(for: instrument)
+        state.trackStates = tracks.map { InstrumentState.TrackState(track: $0) }
         if isRunningInternal {
             if tracks.isEmpty {
-                stopInstrumentTimer(for: instrument)
-                updateCurrentTrackIndex(for: instrument, value: nil)
+                updateCurrentTrackIndices(for: instrument, value: [])
             } else {
-                if state.currentTrackIndex >= tracks.count {
-                    state.currentTrackIndex = 0
-                    state.currentStepIndex = 0
-                    updateCurrentTrackIndex(for: instrument, value: 0)
+                updateCurrentTrackIndices(for: instrument, value: Set(tracks.indices))
+                tracks.indices.forEach { index in
+                    startTrackTimer(for: instrument, trackIndex: index)
                 }
-                state.currentTrackRepeatRemaining = max(1, tracks[state.currentTrackIndex].repeatCount)
-                startInstrumentTimer(for: instrument)
             }
             refreshRunningState()
         }
     }
 
     private func refreshRunningState() {
-        let hasActiveTracks = instrumentStates.values.contains { !$0.tracks.isEmpty }
+        let hasActiveTracks = instrumentStates.values.contains { !$0.trackStates.isEmpty }
         if !hasActiveTracks {
             stopOnQueue()
         }

@@ -311,7 +311,7 @@ private extension ContentView {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(patterns) { $pattern in
                 let localIndex = patterns.wrappedValue.firstIndex(where: { $0.id == pattern.id }) ?? 0
-                let isActive = audio.currentTrackIndices[instrument] == (offset + localIndex)
+                let isActive = audio.currentTrackIndices[instrument]?.contains(offset + localIndex) == true
                 HStack(spacing: 16) {
                     KickPatternView(steps: $pattern.steps)
                     Spacer()
