@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var selectedSnarePreset: SnarePreset = SnarePreset.all[0]
     @State private var selectedHiHatPreset: HiHatPreset = HiHatPreset.all[0]
     @State private var selectedInstrument: DrumInstrument = .kick
+    @State private var addedInstruments: [DrumInstrument] = [.kick]
     private let bpmFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .none
@@ -29,19 +30,22 @@ struct ContentView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                instrumentMenu
+                menuSection
                 headerSection
                 patternSection
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
             .onAppear {
-                applySelectedPreset()
+                applyAllPresets()
             }
             .onChange(of: selectedInstrument) { _, _ in
                 applySelectedPreset()
-                if audio.isRunning {
-                    audio.updateKickTracks(tracks(for: selectedPatterns))
+            }
+            .onChange(of: addedInstruments) { _, _ in
+                if !addedInstruments.contains(selectedInstrument),
+                   let fallback = addedInstruments.first {
+                    selectedInstrument = fallback
                 }
             }
         }
@@ -50,19 +54,52 @@ struct ContentView: View {
 
 // MARK: - Sections
 private extension ContentView {
-    var instrumentMenu: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Instrument")
-                .font(.headline)
-            HStack(spacing: 12) {
-                ForEach(DrumInstrument.allCases) { instrument in
-                    Button {
-                        selectedInstrument = instrument
-                    } label: {
-                        Label(instrument.title, systemImage: instrument.systemImage)
-                            .frame(maxWidth: .infinity)
+    var menuSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Loop It")
+                    .font(.largeTitle)
+                    .bold()
+                Text("Click + to add instruments.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text("Instruments")
+                    .font(.headline)
+                Spacer()
+                Menu {
+                    ForEach(DrumInstrument.allCases) { instrument in
+                        Button {
+                            addInstrument(instrument)
+                        } label: {
+                            Text(instrument.title)
+                        }
+                        .disabled(addedInstruments.contains(instrument))
                     }
-                    .buttonStyle(selectedInstrument == instrument ? .borderedProminent : .bordered)
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                }
+                .accessibilityLabel("Add instrument")
+            }
+
+            if addedInstruments.isEmpty {
+                Text("No instruments added yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 12) {
+                    ForEach(addedInstruments) { instrument in
+                        Button {
+                            selectedInstrument = instrument
+                        } label: {
+                            Label(instrument.title, systemImage: instrument.systemImage)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(selectedInstrument == instrument ? .borderedProminent : .bordered)
+                    }
                 }
             }
         }
@@ -86,8 +123,8 @@ private extension ContentView {
                     .multilineTextAlignment(.trailing)
                     .keyboardType(.numberPad)
                 Button("Start") {
-                    applySelectedPreset()
-                    audio.start(bpm: bpm, tracks: tracks(for: selectedPatterns))
+                    applyAllPresets()
+                    audio.start(bpm: bpm, tracksByInstrument: tracksByInstrument())
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(audio.isRunning)
@@ -126,7 +163,7 @@ private extension ContentView {
                     onPresetChange: { audio.setKickPreset($0) },
                     onPreview: {
                         audio.setKickPreset(selectedKickPreset)
-                        audio.playPreview()
+                        audio.playPreview(for: .kick)
                     }
                 )
             )
@@ -139,7 +176,7 @@ private extension ContentView {
                     onPresetChange: { audio.setSnarePreset($0) },
                     onPreview: {
                         audio.setSnarePreset(selectedSnarePreset)
-                        audio.playPreview()
+                        audio.playPreview(for: .snare)
                     }
                 )
             )
@@ -152,7 +189,7 @@ private extension ContentView {
                     onPresetChange: { audio.setHiHatPreset($0) },
                     onPreview: {
                         audio.setHiHatPreset(selectedHiHatPreset)
-                        audio.playPreview()
+                        audio.playPreview(for: .hiHat)
                     }
                 )
             )
@@ -162,11 +199,11 @@ private extension ContentView {
     var instrumentPatternSection: some View {
         switch selectedInstrument {
         case .kick:
-            return AnyView(patternSection(for: $kickPatterns, onDelete: removeKickPattern))
+            return AnyView(patternSection(for: $kickPatterns, instrument: .kick, onDelete: removeKickPattern))
         case .snare:
-            return AnyView(patternSection(for: $snarePatterns, onDelete: removeSnarePattern))
+            return AnyView(patternSection(for: $snarePatterns, instrument: .snare, onDelete: removeSnarePattern))
         case .hiHat:
-            return AnyView(patternSection(for: $hiHatPatterns, onDelete: removeHiHatPattern))
+            return AnyView(patternSection(for: $hiHatPatterns, instrument: .hiHat, onDelete: removeHiHatPattern))
         }
     }
 
@@ -202,11 +239,12 @@ private extension ContentView {
 
     func patternSection(
         for patterns: Binding<[KickPatternRow]>,
+        instrument: DrumInstrument,
         onDelete: @escaping (KickPatternRow.ID) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(patterns) { $pattern in
-                let isActive = audio.currentTrackIndex == patterns.wrappedValue.firstIndex(where: { $0.id == pattern.id })
+                let isActive = audio.currentTrackIndices[instrument] == patterns.wrappedValue.firstIndex(where: { $0.id == pattern.id })
                 HStack(spacing: 16) {
                     KickPatternView(steps: $pattern.steps)
                     Spacer()
@@ -235,9 +273,12 @@ private extension ContentView {
         .animation(.easeInOut, value: patterns.wrappedValue)
         .onChange(of: patterns.wrappedValue) { _, newPatterns in
             guard audio.isRunning else { return }
-            audio.updateKickTracks(newPatterns.map {
-                KickTrack(pattern: $0.steps, speedMultiplier: $0.speed, repeatCount: $0.repeatCount)
-            })
+            audio.updateInstrumentTracks(
+                instrument,
+                tracks: newPatterns.map {
+                    KickTrack(pattern: $0.steps, speedMultiplier: $0.speed, repeatCount: $0.repeatCount)
+                }
+            )
         }
     }
 
@@ -275,8 +316,33 @@ private extension ContentView {
         }
     }
 
-    var selectedPatterns: [KickPatternRow] {
+    func applySelectedPreset() {
         switch selectedInstrument {
+        case .kick:
+            audio.setKickPreset(selectedKickPreset)
+        case .snare:
+            audio.setSnarePreset(selectedSnarePreset)
+        case .hiHat:
+            audio.setHiHatPreset(selectedHiHatPreset)
+        }
+    }
+
+    func applyAllPresets() {
+        audio.setKickPreset(selectedKickPreset)
+        audio.setSnarePreset(selectedSnarePreset)
+        audio.setHiHatPreset(selectedHiHatPreset)
+    }
+
+    func tracksByInstrument() -> [DrumInstrument: [KickTrack]] {
+        var mapping: [DrumInstrument: [KickTrack]] = [:]
+        for instrument in addedInstruments {
+            mapping[instrument] = tracks(for: patterns(for: instrument))
+        }
+        return mapping
+    }
+
+    func patterns(for instrument: DrumInstrument) -> [KickPatternRow] {
+        switch instrument {
         case .kick:
             return kickPatterns
         case .snare:
@@ -286,14 +352,11 @@ private extension ContentView {
         }
     }
 
-    func applySelectedPreset() {
-        switch selectedInstrument {
-        case .kick:
-            audio.setKickPreset(selectedKickPreset)
-        case .snare:
-            audio.setSnarePreset(selectedSnarePreset)
-        case .hiHat:
-            audio.setHiHatPreset(selectedHiHatPreset)
+    func addInstrument(_ instrument: DrumInstrument) {
+        guard !addedInstruments.contains(instrument) else { return }
+        addedInstruments.append(instrument)
+        if !addedInstruments.contains(selectedInstrument) {
+            selectedInstrument = instrument
         }
     }
 

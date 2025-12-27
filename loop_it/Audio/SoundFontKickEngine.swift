@@ -12,17 +12,14 @@ final class SoundFontKickEngine: ObservableObject {
 
     // MARK: - Published state
     @Published var isRunning = false
-    @Published var currentTrackIndex: Int?
+    @Published var currentTrackIndices: [DrumInstrument: Int?] = [:]
 
     // MARK: - Audio engine plumbing
     private let engine = AVAudioEngine()
-    private let sampler = AVAudioUnitSampler()
-    private var stepTimer: DispatchSourceTimer?
     private let playbackQueue = DispatchQueue(label: "SoundFontKickEngine.playback")
 
     // MARK: - Playback configuration
     private var baseBpm: Double = 120
-    var kickSpeedMultiplier: Double = 1.0 // 0.5, 1, 2, 4, ...
     private var isRunningInternal = false
 
     // MARK: - SoundFont configuration
@@ -32,21 +29,31 @@ final class SoundFontKickEngine: ObservableObject {
     /// General MIDI drum channel (MIDI ch.10 => index 9).
     var midiChannel: UInt8 = 9
 
-    /// Currently selected drum note (kick, snare, hi-hat, etc.).
-    var activeMIDINote: UInt8 = 36
     var velocity: UInt8 = 110
 
     /// Keep the SF2 URL so we can reload different programs.
     private var sf2URL: URL?
-    private var currentProgram: UInt8 = 0
+
+    private final class InstrumentState {
+        let sampler: AVAudioUnitSampler
+        var midiNote: UInt8
+        var program: UInt8
+        var tracks: [KickTrack] = []
+        var timer: DispatchSourceTimer?
+        var currentTrackIndex: Int = 0
+        var currentStepIndex: Int = 0
+        var currentTrackRepeatRemaining: Int = 1
+
+        init(sampler: AVAudioUnitSampler, midiNote: UInt8 = 36, program: UInt8 = 0) {
+            self.sampler = sampler
+            self.midiNote = midiNote
+            self.program = program
+        }
+    }
+
+    private var instrumentStates: [DrumInstrument: InstrumentState] = [:]
 
     // MARK: - Sequencing state
-    var kickPattern: [Bool] = [true, false, false, false]
-    private var kickTracks: [KickTrack] = []
-    private var currentTrackIndexInternal: Int = 0
-    private var currentStepIndex: Int = 0
-    private var currentTrackRepeatRemaining: Int = 1
-
     init(soundFontName: String = "GeneralUser-GS", soundFontExtension: String = "sf2") {
         self.soundFontName = soundFontName
         self.soundFontExtension = soundFontExtension
@@ -55,13 +62,19 @@ final class SoundFontKickEngine: ObservableObject {
         loadSoundFontURL()
 
         // Default kit: Standard 1.
-        setDrumKitProgram(0)
+        DrumInstrument.allCases.forEach { instrument in
+            setDrumKitProgram(for: instrument, program: 0)
+        }
     }
 
     // MARK: - Setup
     private func setupAudio() {
-        engine.attach(sampler)
-        engine.connect(sampler, to: engine.mainMixerNode, format: nil)
+        DrumInstrument.allCases.forEach { instrument in
+            let sampler = AVAudioUnitSampler()
+            instrumentStates[instrument] = InstrumentState(sampler: sampler)
+            engine.attach(sampler)
+            engine.connect(sampler, to: engine.mainMixerNode, format: nil)
+        }
 
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
@@ -82,112 +95,53 @@ final class SoundFontKickEngine: ObservableObject {
     }
 
     // MARK: - Drum kit loading
-    func setDrumKitProgram(_ program: UInt8) {
-        guard let url = sf2URL else { return }
-
-        do {
-            try sampler.loadSoundBankInstrument(
-                at: url,
-                program: program,
-                bankMSB: UInt8(kAUSampler_DefaultPercussionBankMSB),
-                bankLSB: 0
-            )
-            currentProgram = program
-            print("✅ Drum kit loaded program:", program)
-        } catch {
-            print("❌ Failed to load drum kit program \(program):", error)
-        }
-    }
-
-    // MARK: - Presets
     func setKickPreset(_ preset: KickPreset) {
-        playbackQueue.async {
-            // Reload kit only if needed.
-            if preset.program != self.currentProgram {
-                self.setDrumKitProgram(preset.program)
-            }
-            // Update active note.
-            self.activeMIDINote = preset.midiNote
-        }
+        setPreset(program: preset.program, midiNote: preset.midiNote, instrument: .kick)
     }
 
     func setSnarePreset(_ preset: SnarePreset) {
-        playbackQueue.async {
-            if preset.program != self.currentProgram {
-                self.setDrumKitProgram(preset.program)
-            }
-            self.activeMIDINote = preset.midiNote
-        }
+        setPreset(program: preset.program, midiNote: preset.midiNote, instrument: .snare)
     }
 
     func setHiHatPreset(_ preset: HiHatPreset) {
-        playbackQueue.async {
-            if preset.program != self.currentProgram {
-                self.setDrumKitProgram(preset.program)
-            }
-            self.activeMIDINote = preset.midiNote
-        }
+        setPreset(program: preset.program, midiNote: preset.midiNote, instrument: .hiHat)
     }
 
-    func playPreview() {
+    func playPreview(for instrument: DrumInstrument) {
         playbackQueue.async {
-            self.triggerNote()
+            self.triggerNote(for: instrument)
         }
     }
 
     // MARK: - Trigger
-    private func triggerNote() {
-        sampler.startNote(activeMIDINote, withVelocity: velocity, onChannel: midiChannel)
+    private func triggerNote(for instrument: DrumInstrument) {
+        guard let state = instrumentStates[instrument] else { return }
+        state.sampler.startNote(state.midiNote, withVelocity: velocity, onChannel: midiChannel)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self else { return }
-            self.sampler.stopNote(self.activeMIDINote, onChannel: self.midiChannel)
+            state.sampler.stopNote(state.midiNote, onChannel: self.midiChannel)
         }
     }
 
     // MARK: - Transport
-    func start(bpm: Double) {
-        start(
-            bpm: bpm,
-            tracks: [KickTrack(pattern: kickPattern, speedMultiplier: kickSpeedMultiplier, repeatCount: 1)]
-        )
-    }
-
-    func start(bpm: Double, tracks: [KickTrack]) {
+    func start(bpm: Double, tracksByInstrument: [DrumInstrument: [KickTrack]]) {
         playbackQueue.async {
-            guard !self.isRunningInternal, bpm > 0, !tracks.isEmpty else { return }
+            guard !self.isRunningInternal, bpm > 0, !tracksByInstrument.isEmpty else { return }
 
             self.baseBpm = bpm
             self.isRunningInternal = true
             self.updateIsRunning(true)
-            self.kickTracks = tracks
-            self.currentTrackIndexInternal = 0
-            self.currentStepIndex = 0
-            self.updateCurrentTrackIndex(0)
-            self.currentTrackRepeatRemaining = max(1, tracks[0].repeatCount)
 
-            self.startKickTimer()
-        }
-    }
-    
-    func setKickSpeedMultiplier(_ newValue: Double) {
-        playbackQueue.async {
-            // Clamp to sensible values.
-            let clamped = min(max(newValue, 0.25), 8.0)
-            self.kickSpeedMultiplier = clamped
-
-            // If running, restart timer with new interval.
-            if self.isRunningInternal {
-                self.updateKickTracksOnQueue([
-                    KickTrack(pattern: self.kickPattern, speedMultiplier: self.kickSpeedMultiplier, repeatCount: 1)
-                ])
+            tracksByInstrument.forEach { instrument, tracks in
+                self.configureInstrument(instrument, tracks: tracks)
             }
         }
     }
 
-    func updateKickTracks(_ tracks: [KickTrack]) {
+    func updateInstrumentTracks(_ instrument: DrumInstrument, tracks: [KickTrack]) {
         playbackQueue.async {
-            self.updateKickTracksOnQueue(tracks)
+            self.updateInstrumentTracksOnQueue(instrument, tracks: tracks)
         }
     }
 
@@ -198,12 +152,12 @@ final class SoundFontKickEngine: ObservableObject {
     }
 
     // MARK: - Timer control
-    private func startKickTimer(startImmediately: Bool = true) {
-        stopKickTimer()
+    private func startInstrumentTimer(for instrument: DrumInstrument, startImmediately: Bool = true) {
+        stopInstrumentTimer(for: instrument)
 
-        guard !kickTracks.isEmpty else { return }
+        guard let state = instrumentStates[instrument], !state.tracks.isEmpty else { return }
 
-        let track = kickTracks[currentTrackIndexInternal]
+        let track = state.tracks[state.currentTrackIndex]
         let effectiveBpm = max(1, baseBpm * track.speedMultiplier)
         let interval = 60.0 / effectiveBpm
 
@@ -211,73 +165,58 @@ final class SoundFontKickEngine: ObservableObject {
         let deadline: DispatchTime = startImmediately ? .now() : .now() + interval
         timer.schedule(deadline: deadline, repeating: interval)
         timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            guard self.kickTracks.indices.contains(self.currentTrackIndexInternal) else {
-                return
-            }
+            guard let self, let state = self.instrumentStates[instrument], !state.tracks.isEmpty else { return }
 
-            let pattern = self.kickTracks[self.currentTrackIndexInternal].pattern
+            let pattern = state.tracks[state.currentTrackIndex].pattern
             let safePatternLength = max(pattern.count, 1)
 
-            if pattern.indices.contains(self.currentStepIndex),
-               pattern[self.currentStepIndex] {
-                self.triggerNote()
+            if pattern.indices.contains(state.currentStepIndex),
+               pattern[state.currentStepIndex] {
+                self.triggerNote(for: instrument)
             }
 
-            let nextStep = self.currentStepIndex + 1
+            let nextStep = state.currentStepIndex + 1
             if nextStep >= safePatternLength {
-                self.currentStepIndex = 0
-                if self.currentTrackRepeatRemaining > 1 {
-                    self.currentTrackRepeatRemaining -= 1
+                state.currentStepIndex = 0
+                if state.currentTrackRepeatRemaining > 1 {
+                    state.currentTrackRepeatRemaining -= 1
                 } else {
-                    self.currentTrackIndexInternal = (self.currentTrackIndexInternal + 1) % self.kickTracks.count
-                    self.updateCurrentTrackIndex(self.currentTrackIndexInternal)
-                    self.currentTrackRepeatRemaining = max(
+                    state.currentTrackIndex = (state.currentTrackIndex + 1) % state.tracks.count
+                    self.updateCurrentTrackIndex(for: instrument, value: state.currentTrackIndex)
+                    state.currentTrackRepeatRemaining = max(
                         1,
-                        self.kickTracks[self.currentTrackIndexInternal].repeatCount
+                        state.tracks[state.currentTrackIndex].repeatCount
                     )
                 }
-                self.startKickTimer(startImmediately: false)
+                self.startInstrumentTimer(for: instrument, startImmediately: false)
             } else {
-                self.currentStepIndex = nextStep
+                state.currentStepIndex = nextStep
             }
         }
 
-        stepTimer = timer
+        state.timer = timer
         timer.resume()
     }
 
-    private func stopKickTimer() {
-        stepTimer?.cancel()
-        stepTimer = nil
-    }
-
-    private func updateKickTracksOnQueue(_ tracks: [KickTrack]) {
-        kickTracks = tracks
-        if isRunningInternal {
-            guard !tracks.isEmpty else {
-                stopOnQueue()
-                return
-            }
-            if currentTrackIndexInternal >= tracks.count {
-                currentTrackIndexInternal = 0
-                currentStepIndex = 0
-                updateCurrentTrackIndex(0)
-            }
-            currentTrackRepeatRemaining = max(1, tracks[currentTrackIndexInternal].repeatCount)
-            startKickTimer()
-        }
+    private func stopInstrumentTimer(for instrument: DrumInstrument) {
+        instrumentStates[instrument]?.timer?.cancel()
+        instrumentStates[instrument]?.timer = nil
     }
 
     private func stopOnQueue() {
         isRunningInternal = false
         updateIsRunning(false)
-        stopKickTimer()
-        updateCurrentTrackIndex(nil)
-        currentTrackIndexInternal = 0
-        currentStepIndex = 0
-        currentTrackRepeatRemaining = 1
-        sampler.sendController(123, withValue: 0, onChannel: midiChannel)
+        instrumentStates.keys.forEach { instrument in
+            stopInstrumentTimer(for: instrument)
+            updateCurrentTrackIndex(for: instrument, value: nil)
+        }
+        instrumentStates.values.forEach { state in
+            state.currentTrackIndex = 0
+            state.currentStepIndex = 0
+            state.currentTrackRepeatRemaining = 1
+            state.tracks = []
+            state.sampler.sendController(123, withValue: 0, onChannel: midiChannel)
+        }
     }
 
     private func updateIsRunning(_ value: Bool) {
@@ -286,9 +225,80 @@ final class SoundFontKickEngine: ObservableObject {
         }
     }
 
-    private func updateCurrentTrackIndex(_ value: Int?) {
+    private func updateCurrentTrackIndex(for instrument: DrumInstrument, value: Int?) {
         DispatchQueue.main.async {
-            self.currentTrackIndex = value
+            self.currentTrackIndices[instrument] = value
         }
     }
+
+    // MARK: - Instrument setup
+    private func setPreset(program: UInt8, midiNote: UInt8, instrument: DrumInstrument) {
+        playbackQueue.async {
+            guard let state = self.instrumentStates[instrument] else { return }
+            if program != state.program {
+                self.setDrumKitProgram(for: instrument, program: program)
+            }
+            state.midiNote = midiNote
+        }
+    }
+
+    private func setDrumKitProgram(for instrument: DrumInstrument, program: UInt8) {
+        guard let url = sf2URL, let state = instrumentStates[instrument] else { return }
+
+        do {
+            try state.sampler.loadSoundBankInstrument(
+                at: url,
+                program: program,
+                bankMSB: UInt8(kAUSampler_DefaultPercussionBankMSB),
+                bankLSB: 0
+            )
+            state.program = program
+            print("✅ Drum kit loaded program:", program, "for", instrument.rawValue)
+        } catch {
+            print("❌ Failed to load drum kit program \(program) for \(instrument.rawValue):", error)
+        }
+    }
+
+    private func configureInstrument(_ instrument: DrumInstrument, tracks: [KickTrack]) {
+        guard let state = instrumentStates[instrument] else { return }
+        state.tracks = tracks
+        guard !tracks.isEmpty else {
+            updateCurrentTrackIndex(for: instrument, value: nil)
+            return
+        }
+
+        state.currentTrackIndex = 0
+        state.currentStepIndex = 0
+        updateCurrentTrackIndex(for: instrument, value: 0)
+        state.currentTrackRepeatRemaining = max(1, tracks[0].repeatCount)
+        startInstrumentTimer(for: instrument)
+    }
+
+    private func updateInstrumentTracksOnQueue(_ instrument: DrumInstrument, tracks: [KickTrack]) {
+        guard let state = instrumentStates[instrument] else { return }
+        state.tracks = tracks
+        if isRunningInternal {
+            if tracks.isEmpty {
+                stopInstrumentTimer(for: instrument)
+                updateCurrentTrackIndex(for: instrument, value: nil)
+            } else {
+                if state.currentTrackIndex >= tracks.count {
+                    state.currentTrackIndex = 0
+                    state.currentStepIndex = 0
+                    updateCurrentTrackIndex(for: instrument, value: 0)
+                }
+                state.currentTrackRepeatRemaining = max(1, tracks[state.currentTrackIndex].repeatCount)
+                startInstrumentTimer(for: instrument)
+            }
+            refreshRunningState()
+        }
+    }
+
+    private func refreshRunningState() {
+        let hasActiveTracks = instrumentStates.values.contains { !$0.tracks.isEmpty }
+        if !hasActiveTracks {
+            stopOnQueue()
+        }
+    }
+}
 }
