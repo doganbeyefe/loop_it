@@ -26,7 +26,7 @@ struct ContentView: View {
     }()
 
     private enum Route: Hashable {
-        case editor
+        case editor(InstrumentInstance.ID)
     }
 
     var body: some View {
@@ -34,8 +34,8 @@ struct ContentView: View {
             menuPage
                 .navigationDestination(for: Route.self) { route in
                     switch route {
-                    case .editor:
-                        editorPage
+                    case let .editor(instanceID):
+                        editorPage(selectedID: instanceID)
                     }
                 }
         }
@@ -62,7 +62,7 @@ private extension ContentView {
         }
     }
 
-    var editorPage: some View {
+    func editorPage(selectedID: InstrumentInstance.ID?) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 editorHeader
@@ -73,6 +73,9 @@ private extension ContentView {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
             .onAppear {
+                if let selectedID {
+                    selectedInstanceID = selectedID
+                }
                 ensureSelectedInstance()
                 ensurePatternsForInstances()
             }
@@ -122,7 +125,7 @@ private extension ContentView {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(instrumentInstances) { instance in
-                    NavigationLink(value: Route.editor) {
+                    NavigationLink(value: Route.editor(instance.id)) {
                         HStack {
                             Label(instanceDisplayName(instance), systemImage: instance.instrument.systemImage)
                             Spacer()
@@ -133,9 +136,6 @@ private extension ContentView {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color(.secondarySystemBackground))
                     )
-                    .simultaneousGesture(TapGesture().onEnded {
-                        selectedInstanceID = instance.id
-                    })
                 }
             }
         }
@@ -146,7 +146,7 @@ private extension ContentView {
 private extension ContentView {
     var editorHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Edit your patterns")
+            Text(selectedInstance.map(instanceDisplayName) ?? "Edit your patterns")
                 .font(.title2)
                 .bold()
             Text("Use Update to apply your changes to playback.")
