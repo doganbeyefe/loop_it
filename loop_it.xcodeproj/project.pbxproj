@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		50B506C12EFF0F28007FF290 /* GeneralUser-GS.sf2 in Resources */ = {isa = PBXBuildFile; fileRef = 50B506C02EFF0F28007FF290 /* GeneralUser-GS.sf2 */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		50B506A42EFF0F28007FF290 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		50B506C02EFF0F28007FF290 /* GeneralUser-GS.sf2 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "loop_it/GeneralUser-GS.sf2"; sourceTree = SOURCE_ROOT; };
 		50B506932EFF0F25007FF290 /* loop_it.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = loop_it.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		50B506A32EFF0F28007FF290 /* loop_itTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = loop_itTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		50B506AD2EFF0F28007FF290 /* loop_itUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = loop_itUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -212,6 +217,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				50B506C12EFF0F28007FF290 /* GeneralUser-GS.sf2 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
