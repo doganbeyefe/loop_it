@@ -92,13 +92,7 @@ private extension ContentView {
             } else {
                 HStack(spacing: 12) {
                     ForEach(addedInstruments) { instrument in
-                        Button {
-                            selectedInstrument = instrument
-                        } label: {
-                            Label(instrument.title, systemImage: instrument.systemImage)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(selectedInstrument == instrument ? .borderedProminent : .bordered)
+                        instrumentSelectionButton(for: instrument)
                     }
                 }
             }
@@ -204,6 +198,27 @@ private extension ContentView {
             return AnyView(patternSection(for: $snarePatterns, instrument: .snare, onDelete: removeSnarePattern))
         case .hiHat:
             return AnyView(patternSection(for: $hiHatPatterns, instrument: .hiHat, onDelete: removeHiHatPattern))
+        }
+    }
+
+    @ViewBuilder
+    func instrumentSelectionButton(for instrument: DrumInstrument) -> some View {
+        if selectedInstrument == instrument {
+            Button {
+                selectedInstrument = instrument
+            } label: {
+                Label(instrument.title, systemImage: instrument.systemImage)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+        } else {
+            Button {
+                selectedInstrument = instrument
+            } label: {
+                Label(instrument.title, systemImage: instrument.systemImage)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
         }
     }
 
