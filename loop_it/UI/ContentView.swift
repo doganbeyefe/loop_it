@@ -271,7 +271,6 @@ private extension ContentView {
             patternSection(
                 for: patternsBinding,
                 instanceID: selectedInstance.id,
-                offset: trackOffset(for: selectedInstance),
                 onDelete: removePattern
             )
         )
@@ -313,13 +312,12 @@ private extension ContentView {
     func patternSection(
         for patterns: Binding<[KickPatternRow]>,
         instanceID: InstrumentInstance.ID,
-        offset: Int,
         onDelete: @escaping (KickPatternRow.ID) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(patterns) { $pattern in
                 let localIndex = patterns.wrappedValue.firstIndex(where: { $0.id == pattern.id }) ?? 0
-                let isActive = audio.currentTrackIndices[instanceID]?.contains(offset + localIndex) == true
+                let isActive = audio.currentTrackIndices[instanceID]?.contains(localIndex) == true
                 HStack(spacing: 16) {
                     KickPatternView(steps: $pattern.steps)
                     Spacer()
@@ -438,18 +436,6 @@ private extension ContentView {
         let matches = instrumentInstances.filter { $0.instrument == instance.instrument }
         let index = matches.firstIndex { $0.id == instance.id } ?? 0
         return index + 1
-    }
-
-    func trackOffset(for instance: InstrumentInstance) -> Int {
-        var offset = 0
-        for item in instrumentInstances {
-            if item.id == instance.id {
-                break
-            }
-            guard item.instrument == instance.instrument else { continue }
-            offset += patternsByInstance[item.id]?.count ?? 0
-        }
-        return offset
     }
 
     func instanceTitle(for instance: InstrumentInstance) -> String {
