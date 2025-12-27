@@ -9,6 +9,8 @@ import SwiftUI
 
 struct KickSettingsView: View {
     @ObservedObject var audio: SoundFontKickEngine
+    let instanceID: InstrumentInstanceID = InstrumentInstanceID(instrument: .kick)
+    let instrument: DrumInstrument = .kick
     @State private var selectedPreset: KickPreset = KickPreset.all[0]
 
     var body: some View {
@@ -20,17 +22,32 @@ struct KickSettingsView: View {
             }
             .pickerStyle(.menu)
             .onChange(of: selectedPreset) { _, newPreset in
-                audio.setKickPreset(newPreset)
+                audio.setPreset(
+                    for: instanceID,
+                    instrument: instrument,
+                    program: newPreset.program,
+                    midiNote: newPreset.midiNote
+                )
             }
 
             Button("Preview Kick") {
-                audio.setKickPreset(selectedPreset)
-                audio.playPreview(for: .kick)
+                audio.setPreset(
+                    for: instanceID,
+                    instrument: instrument,
+                    program: selectedPreset.program,
+                    midiNote: selectedPreset.midiNote
+                )
+                audio.playPreview(for: instanceID)
             }
             .buttonStyle(.bordered)
         }
         .onAppear {
-            audio.setKickPreset(selectedPreset)
+            audio.setPreset(
+                for: instanceID,
+                instrument: instrument,
+                program: selectedPreset.program,
+                midiNote: selectedPreset.midiNote
+            )
         }
     }
 }
