@@ -279,7 +279,7 @@ private extension ContentView {
             Label(instanceDisplayName(instance), systemImage: instance.instrument.systemImage)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(isSelected ? .borderedProminent : .bordered)
+//        .buttonStyle(isSelected ? .borderedProminent : .bordered)
     }
 
     func headerSection<Preset: DrumPreset>(
