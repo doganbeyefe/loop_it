@@ -11,7 +11,7 @@ struct ContentView: View {
     // MARK: - State
     @StateObject private var audio = SoundFontKickEngine()
     @State private var bpm: Double = 120
-    @State private var kickPatterns: [KickPatternRow] = (0..<4).map { _ in KickPatternRow() }
+    @State private var kickPatterns: [KickPatternRow] = (0..<1).map { _ in KickPatternRow() }
     @State private var selectedPreset: KickPreset = KickPreset.all[0]
     private let bpmFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
@@ -103,8 +103,7 @@ private extension ContentView {
     }
 
     var topRightSection: some View {
-        VStack(alignment: .trailing, spacing: 12) {
-            HStack(spacing: 8) {
+            HStack {
                 Text("BPM")
                     .font(.subheadline)
                 TextField("BPM", value: $bpm, formatter: bpmFormatter)
@@ -112,9 +111,6 @@ private extension ContentView {
                     .textFieldStyle(.roundedBorder)
                     .multilineTextAlignment(.trailing)
                     .keyboardType(.numberPad)
-            }
-
-            HStack {
                 Button("Start") {
                     audio.setKickPreset(selectedPreset)
                     audio.start(
@@ -137,7 +133,6 @@ private extension ContentView {
                 .buttonStyle(.bordered)
                 .disabled(!audio.isRunning)
             }
-        }
     }
 
     var addPatternButton: some View {
