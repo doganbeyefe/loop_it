@@ -11,6 +11,7 @@ import SwiftUI
 struct KickSpeedControl: View {
     @Binding var speed: Double
     @Binding var repeatCount: Int
+    let onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: 16) {
@@ -44,6 +45,14 @@ struct KickSpeedControl: View {
                     repeatCount = min(repeatCount + 1, 8)
                 }
                 .buttonStyle(.bordered)
+
+                Button {
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Delete pattern row")
             }
         }
     }
