@@ -39,10 +39,11 @@ struct ContentView: View {
 // MARK: - Sections
 private extension ContentView {
     var headerSection: some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: 8) {
             Text("Kick")
                 .font(.title2)
                 .bold()
+//            Spacer()
             Picker("Kick", selection: $selectedPreset) {
                 ForEach(KickPreset.all) { preset in
                     Text(preset.title).tag(preset)
@@ -58,7 +59,7 @@ private extension ContentView {
                 audio.playKickPreview()
             }
             .buttonStyle(.bordered)
-            Spacer()
+//            Spacer()
             topRightSection
         }
     }
