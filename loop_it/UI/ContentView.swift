@@ -56,12 +56,6 @@ private extension ContentView {
             VStack(alignment: .leading, spacing: 24) {
                 menuHeader
                 instrumentList
-                NavigationLink(value: Route.editor) {
-                    Text("Edit Patterns")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(instrumentInstances.isEmpty)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
@@ -128,15 +122,20 @@ private extension ContentView {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(instrumentInstances) { instance in
-                    HStack {
-                        Label(instanceDisplayName(instance), systemImage: instance.instrument.systemImage)
-                        Spacer()
+                    NavigationLink(value: Route.editor) {
+                        HStack {
+                            Label(instanceDisplayName(instance), systemImage: instance.instrument.systemImage)
+                            Spacer()
+                        }
                     }
                     .padding(16)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color(.secondarySystemBackground))
                     )
+                    .simultaneousGesture(TapGesture().onEnded {
+                        selectedInstanceID = instance.id
+                    })
                 }
             }
         }
