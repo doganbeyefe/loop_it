@@ -31,8 +31,8 @@ final class SoundFontKickEngine: ObservableObject {
     /// General MIDI drum channel (MIDI ch.10 => index 9).
     var midiChannel: UInt8 = 9
 
-    /// Kick note (typically 36 or 35).
-    var kickMIDINote: UInt8 = 36
+    /// Currently selected drum note (kick, snare, hi-hat, etc.).
+    var activeMIDINote: UInt8 = 36
     var velocity: UInt8 = 110
 
     /// Keep the SF2 URL so we can reload different programs.
@@ -104,21 +104,35 @@ final class SoundFontKickEngine: ObservableObject {
         if preset.program != currentProgram {
             setDrumKitProgram(preset.program)
         }
-        // Update kick note.
-        kickMIDINote = preset.midiNote
+        // Update active note.
+        activeMIDINote = preset.midiNote
     }
 
-    func playKickPreview() {
-        triggerKick()
+    func setSnarePreset(_ preset: SnarePreset) {
+        if preset.program != currentProgram {
+            setDrumKitProgram(preset.program)
+        }
+        activeMIDINote = preset.midiNote
+    }
+
+    func setHiHatPreset(_ preset: HiHatPreset) {
+        if preset.program != currentProgram {
+            setDrumKitProgram(preset.program)
+        }
+        activeMIDINote = preset.midiNote
+    }
+
+    func playPreview() {
+        triggerNote()
     }
 
     // MARK: - Trigger
-    private func triggerKick() {
-        sampler.startNote(kickMIDINote, withVelocity: velocity, onChannel: midiChannel)
+    private func triggerNote() {
+        sampler.startNote(activeMIDINote, withVelocity: velocity, onChannel: midiChannel)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self else { return }
-            self.sampler.stopNote(self.kickMIDINote, onChannel: self.midiChannel)
+            self.sampler.stopNote(self.activeMIDINote, onChannel: self.midiChannel)
         }
     }
 
@@ -208,7 +222,7 @@ final class SoundFontKickEngine: ObservableObject {
 
             if pattern.indices.contains(self.currentStepIndex),
                pattern[self.currentStepIndex] {
-                self.triggerKick()
+                self.triggerNote()
             }
 
             let nextStep = self.currentStepIndex + 1
