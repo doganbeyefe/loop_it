@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     // MARK: - State
-    @StateObject private var audio = SoundFontKickEngine()
+    @ObservedObject var audio: SoundFontKickEngine
     @State private var bpm: Double = 120
     @State private var kickPatterns: [KickPatternRow] = (0..<1).map { _ in KickPatternRow() }
     @State private var snarePatterns: [KickPatternRow] = (0..<1).map { _ in KickPatternRow() }
@@ -308,4 +308,4 @@ private extension ContentView {
     }
 }
 
-#Preview { ContentView() }
+#Preview { ContentView(audio: SoundFontKickEngine()) }
