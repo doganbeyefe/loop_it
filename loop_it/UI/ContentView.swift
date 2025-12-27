@@ -66,7 +66,7 @@ private extension ContentView {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 editorHeader
-                instrumentSelection
+//                instrumentSelection
                 instrumentHeaderSection
                 instrumentPatternSection
             }
@@ -287,9 +287,6 @@ private extension ContentView {
         onPreview: @escaping () -> Void
     ) -> some View {
         HStack(alignment: .top, spacing: 16) {
-            Text(title)
-                .font(.title2)
-                .bold()
             Picker(title, selection: selectedPreset) {
                 ForEach(presets) { preset in
                     Text(preset.title).tag(preset)
