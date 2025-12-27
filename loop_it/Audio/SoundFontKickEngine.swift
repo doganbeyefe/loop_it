@@ -40,7 +40,6 @@ final class SoundFontKickEngine: ObservableObject {
         var program: UInt8
         final class TrackState {
             let track: KickTrack
-            var timer: DispatchSourceTimer?
             var currentStepIndex: Int = 0
             var repeatRemaining: Int
 
@@ -51,6 +50,8 @@ final class SoundFontKickEngine: ObservableObject {
         }
 
         var trackStates: [TrackState] = []
+        var timer: DispatchSourceTimer?
+        var activeTrackIndex: Int = 0
 
         init(sampler: AVAudioUnitSampler, midiNote: UInt8 = 36, program: UInt8 = 0) {
             self.sampler = sampler
@@ -175,15 +176,14 @@ final class SoundFontKickEngine: ObservableObject {
     }
 
     // MARK: - Timer control
-    private func startTrackTimer(
+    private func startInstrumentTimer(
         for instrument: DrumInstrument,
-        trackIndex: Int,
         startImmediately: Bool = true
     ) {
         guard let state = instrumentStates[instrument],
-              state.trackStates.indices.contains(trackIndex) else { return }
+              state.trackStates.indices.contains(state.activeTrackIndex) else { return }
 
-        let trackState = state.trackStates[trackIndex]
+        let trackState = state.trackStates[state.activeTrackIndex]
         let effectiveBpm = max(1, baseBpm * trackState.track.speedMultiplier)
         let interval = 60.0 / effectiveBpm
 
@@ -193,9 +193,9 @@ final class SoundFontKickEngine: ObservableObject {
         timer.setEventHandler { [weak self] in
             guard let self,
                   let state = self.instrumentStates[instrument],
-                  state.trackStates.indices.contains(trackIndex) else { return }
+                  state.trackStates.indices.contains(state.activeTrackIndex) else { return }
 
-            let activeTrackState = state.trackStates[trackIndex]
+            let activeTrackState = state.trackStates[state.activeTrackIndex]
             let pattern = activeTrackState.track.pattern
             let safePatternLength = max(pattern.count, 1)
 
@@ -211,22 +211,27 @@ final class SoundFontKickEngine: ObservableObject {
                     activeTrackState.repeatRemaining -= 1
                 } else {
                     activeTrackState.repeatRemaining = max(1, activeTrackState.track.repeatCount)
+                    if !state.trackStates.isEmpty {
+                        state.activeTrackIndex = (state.activeTrackIndex + 1) % state.trackStates.count
+                        self.updateCurrentTrackIndices(for: instrument, value: [state.activeTrackIndex])
+                        self.startInstrumentTimer(for: instrument, startImmediately: false)
+                        return
+                    }
                 }
             } else {
                 activeTrackState.currentStepIndex = nextStep
             }
         }
 
-        trackState.timer?.cancel()
-        trackState.timer = timer
+        state.timer?.cancel()
+        state.timer = timer
         timer.resume()
     }
 
     private func stopInstrumentTimer(for instrument: DrumInstrument) {
-        instrumentStates[instrument]?.trackStates.forEach { trackState in
-            trackState.timer?.cancel()
-            trackState.timer = nil
-        }
+        guard let state = instrumentStates[instrument] else { return }
+        state.timer?.cancel()
+        state.timer = nil
     }
 
     private func stopOnQueue() {
@@ -286,29 +291,27 @@ final class SoundFontKickEngine: ObservableObject {
         guard let state = instrumentStates[instrument] else { return }
         stopInstrumentTimer(for: instrument)
         state.trackStates = tracks.map { InstrumentState.TrackState(track: $0) }
+        state.activeTrackIndex = 0
         guard !tracks.isEmpty else {
             updateCurrentTrackIndices(for: instrument, value: [])
             return
         }
 
-        updateCurrentTrackIndices(for: instrument, value: Set(tracks.indices))
-        tracks.indices.forEach { index in
-            startTrackTimer(for: instrument, trackIndex: index)
-        }
+        updateCurrentTrackIndices(for: instrument, value: [state.activeTrackIndex])
+        startInstrumentTimer(for: instrument)
     }
 
     private func updateInstrumentTracksOnQueue(_ instrument: DrumInstrument, tracks: [KickTrack]) {
         guard let state = instrumentStates[instrument] else { return }
         stopInstrumentTimer(for: instrument)
         state.trackStates = tracks.map { InstrumentState.TrackState(track: $0) }
+        state.activeTrackIndex = 0
         if isRunningInternal {
             if tracks.isEmpty {
                 updateCurrentTrackIndices(for: instrument, value: [])
             } else {
-                updateCurrentTrackIndices(for: instrument, value: Set(tracks.indices))
-                tracks.indices.forEach { index in
-                    startTrackTimer(for: instrument, trackIndex: index)
-                }
+                updateCurrentTrackIndices(for: instrument, value: [state.activeTrackIndex])
+                startInstrumentTimer(for: instrument)
             }
             refreshRunningState()
         }
