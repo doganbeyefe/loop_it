@@ -17,6 +17,8 @@ struct ContentView: View {
     @State private var kickPresetByInstance: [InstrumentInstance.ID: KickPreset] = [:]
     @State private var snarePresetByInstance: [InstrumentInstance.ID: SnarePreset] = [:]
     @State private var hiHatPresetByInstance: [InstrumentInstance.ID: HiHatPreset] = [:]
+    @State private var isStarting = false
+    @State private var instrumentToDelete: InstrumentInstance?
     private let bpmFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .none
@@ -31,13 +33,16 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            menuPage
-                .navigationDestination(for: Route.self) { route in
-                    switch route {
-                    case let .editor(instanceID):
-                        editorPage(selectedID: instanceID)
-                    }
+            ZStack {
+                Color.white.ignoresSafeArea()
+                menuPage
+            }
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case let .editor(instanceID):
+                    editorPage(selectedID: instanceID)
                 }
+            }
         }
         .onAppear {
             initializeStateIfNeeded()
@@ -61,6 +66,7 @@ private extension ContentView {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
         }
+        .background(Color.white.ignoresSafeArea())
     }
 
     func editorPage(selectedID: InstrumentInstance.ID?) -> some View {
@@ -84,6 +90,7 @@ private extension ContentView {
         }
         .navigationTitle("Pattern Editor")
         .navigationBarTitleDisplayMode(.inline)
+        .background(Color.white.ignoresSafeArea())
     }
 }
 
@@ -92,17 +99,19 @@ private extension ContentView {
     var menuHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Loop It")
-                .font(.title2)
+                .font(.largeTitle)
                 .bold()
+                .foregroundStyle(.black)
             
-            Text("Create music easily")
+            Text("Create and layer beats with ease.")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.black.opacity(0.7))
                 .padding(.bottom, 16)
 
             HStack {
                 Text("Instruments")
                     .font(.headline)
+                    .foregroundStyle(.black)
                 Spacer()
                 Menu {
                     ForEach(DrumInstrument.allCases) { instrument in
@@ -113,12 +122,28 @@ private extension ContentView {
                         }
                     }
                 } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add")
+                    }
+                    .font(.headline)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
                 }
                 .accessibilityLabel("Add instrument")
             }
         }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.gray.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.gray.opacity(0.12), lineWidth: 1)
+                )
+        )
     }
 
     var instrumentList: some View {
@@ -126,23 +151,90 @@ private extension ContentView {
             if instrumentInstances.isEmpty {
                 Text("Tap + to add instruments")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.gray)
             } else {
                 ForEach(instrumentInstances) { instance in
-                    NavigationLink(value: Route.editor(instance.id)) {
-                        HStack {
-                            Label(instanceDisplayName(instance), systemImage: instance.instrument.systemImage)
-                            Spacer()
-                        }
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(.secondarySystemBackground))
-                    )
+                    instrumentCard(for: instance)
                 }
             }
         }
+        .animation(.easeInOut, value: instrumentInstances)
+    }
+}
+
+private extension ContentView {
+    func instrumentCard(for instance: InstrumentInstance) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.gray.opacity(0.15))
+                .frame(width: 38, height: 38)
+            Image(systemName: instance.instrument.systemImage)
+                    .foregroundStyle(.primary)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(instanceDisplayName(instance))
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text("Tap edit to shape patterns")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            HStack(spacing: 14) {
+                NavigationLink(value: Route.editor(instance.id)) {
+                    actionIcon(systemName: "pencil", bg: Color.white.opacity(0.14))
+                }
+                Button {
+                    // Future settings action placeholder
+                } label: {
+                    actionIcon(systemName: "gearshape", bg: Color.white.opacity(0.08))
+                }
+                Button(role: .destructive) {
+                    instrumentToDelete = instance
+                } label: {
+                    actionIcon(systemName: "trash", bg: Color.red.opacity(0.18))
+                        .foregroundStyle(.white)
+                }
+                .tint(.red)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.gray.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.gray.opacity(0.12), lineWidth: 1)
+                )
+        )
+        .confirmationDialog(
+            "Delete \(instanceDisplayName(instance))?",
+            isPresented: Binding(
+                get: { instrumentToDelete?.id == instance.id },
+                set: { newValue in
+                    if !newValue { instrumentToDelete = nil }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let toDelete = instrumentToDelete {
+                    deleteInstrument(toDelete)
+                }
+                instrumentToDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                instrumentToDelete = nil
+            }
+        }
+    }
+
+    func actionIcon(systemName: String, bg: Color) -> some View {
+        Image(systemName: systemName)
+            .frame(width: 32, height: 32)
+            .background(bg)
+            .clipShape(Circle())
     }
 }
 
@@ -181,18 +273,29 @@ private extension ContentView {
         HStack(spacing: 12) {
             Text("BPM")
                 .font(.subheadline)
+                .foregroundStyle(.primary)
             TextField("BPM", value: $bpm, formatter: bpmFormatter)
                 .frame(width: 70)
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.trailing)
                 .keyboardType(.numberPad)
-            Button("Update") {
-                applyUpdate()
+            Button {
+                applyStartOrUpdate()
+            } label: {
+                if isStarting {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                } else {
+                    Text(audio.isRunning ? "Update" : "Start")
+                }
             }
             .buttonStyle(.borderedProminent)
+            .disabled(isStarting)
 
             Button("Stop") {
                 audio.stop()
+                isStarting = false
             }
             .buttonStyle(.bordered)
             .disabled(!audio.isRunning)
@@ -490,8 +593,26 @@ private extension ContentView {
         }
     }
 
-    func applyUpdate() {
-        audio.updateSessionOnNextBar(bpm: bpm, tracksByInstance: tracksByInstance())
+    func applyStartOrUpdate() {
+        let mapping = tracksByInstance()
+        guard mapping.values.contains(where: { !$0.tracks.isEmpty }) else {
+            audio.stop()
+            isStarting = false
+            return
+        }
+
+        if !audio.isRunning {
+            isStarting = true
+        }
+
+        if audio.isRunning {
+            audio.updateSessionOnNextBar(bpm: bpm, tracksByInstance: mapping)
+        } else {
+            audio.start(bpm: bpm, tracksByInstance: mapping)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                self.isStarting = false
+            }
+        }
     }
 
     func tracksByInstance() -> [InstrumentInstance.ID: InstrumentPlaybackConfig] {
@@ -544,6 +665,17 @@ private extension ContentView {
         }
     }
 
+    func deleteInstrument(_ instance: InstrumentInstance) {
+        instrumentInstances.removeAll { $0.id == instance.id }
+        patternsByInstance[instance.id] = nil
+        kickPresetByInstance[instance.id] = nil
+        snarePresetByInstance[instance.id] = nil
+        hiHatPresetByInstance[instance.id] = nil
+        if selectedInstanceID == instance.id {
+            selectedInstanceID = instrumentInstances.first?.id
+        }
+    }
+
     func tracks(for patterns: [KickPatternRow]) -> [KickTrack] {
         patterns.map {
             KickTrack(
@@ -558,3 +690,16 @@ private extension ContentView {
 #Preview { ContentView(audio: SoundFontKickEngine()) }
 
 //
+
+private extension ContentView {
+    var backgroundGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 0.08, green: 0.12, blue: 0.18),
+                Color(red: 0.04, green: 0.06, blue: 0.1)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+}

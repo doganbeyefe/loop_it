@@ -149,11 +149,13 @@ final class SoundFontKickEngine: ObservableObject {
             let hasTracks = tracksByInstance.values.contains { !$0.tracks.isEmpty }
             guard !self.isRunningInternal, bpm > 0, hasTracks else { return }
 
+            self.preloadSamplers(with: tracksByInstance)
+
             self.baseBpm = bpm
             self.isRunningInternal = true
             self.updateIsRunning(true)
 
-            let startTime = DispatchTime.now() + 0.05
+            let startTime = DispatchTime.now() + 0.02
             self.configureInstances(with: tracksByInstance, startTime: startTime)
             self.refreshRunningState()
         }
@@ -188,16 +190,14 @@ final class SoundFontKickEngine: ObservableObject {
             let barDuration = Double(beatsPerBar) * (60.0 / bpm)
             let startTime = DispatchTime.now() + barDuration
 
-            // If nothing is running, just schedule the start at the computed bar.
-            DispatchQueue.global().async {
-                self.playbackQueue.asyncAfter(deadline: startTime) {
-                    self.stopOnQueue()
-                    self.baseBpm = bpm
-                    self.isRunningInternal = true
-                    self.updateIsRunning(true)
-                    self.configureInstances(with: tracksByInstance, startTime: startTime)
-                    self.refreshRunningState()
-                }
+            self.preloadSamplers(with: tracksByInstance)
+
+            self.playbackQueue.asyncAfter(deadline: startTime) {
+                self.baseBpm = bpm
+                self.isRunningInternal = true
+                self.updateIsRunning(true)
+                self.configureInstances(with: tracksByInstance, startTime: startTime)
+                self.refreshRunningState()
             }
         }
     }
@@ -361,6 +361,17 @@ final class SoundFontKickEngine: ObservableObject {
         }
 
         return samplerState
+    }
+
+    private func preloadSamplers(with tracksByInstance: [InstrumentInstanceID: InstrumentPlaybackConfig]) {
+        tracksByInstance.forEach { instanceID, payload in
+            _ = ensureSampler(
+                for: instanceID,
+                instrument: payload.instrument,
+                program: payload.program,
+                midiNote: payload.midiNote
+            )
+        }
     }
 
     private func configureInstances(
