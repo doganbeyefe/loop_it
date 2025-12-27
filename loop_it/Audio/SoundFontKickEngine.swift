@@ -82,7 +82,7 @@ final class SoundFontKickEngine: ObservableObject {
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
             try AVAudioSession.sharedInstance().setActive(true)
-            try engine.start()
+            engine.prepare()
         } catch {
             print("❌ Audio setup error:", error)
         }
@@ -343,13 +343,7 @@ final class SoundFontKickEngine: ObservableObject {
         }
         engine.attach(sampler)
         engine.connect(sampler, to: engine.mainMixerNode, format: nil)
-        if wasRunning {
-            do {
-                try engine.start()
-            } catch {
-                print("❌ Audio restart error:", error)
-            }
-        }
+        startEngineIfNeeded(wasRunning: wasRunning)
         setDrumKitProgram(for: id, program: 0)
     }
 
@@ -362,14 +356,20 @@ final class SoundFontKickEngine: ObservableObject {
             engine.stop()
         }
         engine.detach(state.sampler)
-        if wasRunning {
-            do {
-                try engine.start()
-            } catch {
-                print("❌ Audio restart error:", error)
-            }
-        }
         instrumentStates.removeValue(forKey: id)
         updateCurrentTrackIndices(for: id, value: [])
+        if wasRunning {
+            startEngineIfNeeded(wasRunning: true)
+        }
+    }
+
+    private func startEngineIfNeeded(wasRunning: Bool) {
+        guard wasRunning || !engine.isRunning else { return }
+        guard !instrumentStates.isEmpty else { return }
+        do {
+            try engine.start()
+        } catch {
+            print("❌ Audio restart error:", error)
+        }
     }
 }
