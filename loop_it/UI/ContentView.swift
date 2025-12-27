@@ -24,7 +24,6 @@ struct ContentView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                presetSection
                 headerSection
                 patternSection
             }
@@ -40,17 +39,10 @@ struct ContentView: View {
 // MARK: - Sections
 private extension ContentView {
     var headerSection: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: 16) {
             Text("Kick")
                 .font(.title2)
                 .bold()
-            Spacer()
-            topRightSection
-        }
-    }
-
-    var presetSection: some View {
-        VStack(spacing: 12) {
             Picker("Kick", selection: $selectedPreset) {
                 ForEach(KickPreset.all) { preset in
                     Text(preset.title).tag(preset)
@@ -66,21 +58,23 @@ private extension ContentView {
                 audio.playKickPreview()
             }
             .buttonStyle(.bordered)
+            Spacer()
+            topRightSection
         }
     }
 
     var patternSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ForEach(kickPatterns.indices, id: \.self) { index in
-                let isActive = audio.currentTrackIndex == index
+            ForEach($kickPatterns) { $pattern in
+                let isActive = audio.currentTrackIndex == kickPatterns.firstIndex(where: { $0.id == pattern.id })
                 HStack(spacing: 16) {
-                    KickPatternView(steps: $kickPatterns[index].steps)
+                    KickPatternView(steps: $pattern.steps)
                     Spacer()
                     KickSpeedControl(
-                        speed: $kickPatterns[index].speed,
-                        repeatCount: $kickPatterns[index].repeatCount,
+                        speed: $pattern.speed,
+                        repeatCount: $pattern.repeatCount,
                         onDelete: {
-                            removeKickPattern(at: index)
+                            removeKickPattern(at: pattern.id)
                         }
                     )
                 }
@@ -93,10 +87,12 @@ private extension ContentView {
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(isActive ? Color.accentColor : Color.clear, lineWidth: 2)
                 )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
 
             addPatternButton
         }
+        .animation(.easeInOut, value: kickPatterns)
         .onChange(of: kickPatterns) { _, newPatterns in
             guard audio.isRunning else { return }
             audio.updateKickTracks(newPatterns.map {
@@ -154,12 +150,16 @@ private extension ContentView {
     }
 
     func addKickPattern() {
-        kickPatterns.append(KickPatternRow())
+        withAnimation(.easeInOut) {
+            kickPatterns.append(KickPatternRow())
+        }
     }
 
-    func removeKickPattern(at index: Int) {
-        guard kickPatterns.indices.contains(index) else { return }
-        kickPatterns.remove(at: index)
+    func removeKickPattern(at id: KickPatternRow.ID) {
+        guard let index = kickPatterns.firstIndex(where: { $0.id == id }) else { return }
+        withAnimation(.easeInOut) {
+            kickPatterns.remove(at: index)
+        }
     }
 }
 
