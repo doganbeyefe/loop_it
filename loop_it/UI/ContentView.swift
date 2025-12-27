@@ -38,7 +38,6 @@ struct ContentView: View {
                         editorPage
                     }
                 }
-                .navigationTitle("Loop It")
         }
         .onAppear {
             initializeStateIfNeeded()
@@ -93,10 +92,10 @@ private extension ContentView {
 private extension ContentView {
     var menuHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Add your instruments")
+            Text("Loop It")
                 .font(.title2)
                 .bold()
-            Text("Tap + to add as many instruments as you want before editing patterns.")
+            Text("Tap + to add instruments")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -133,7 +132,7 @@ private extension ContentView {
                         Label(instanceDisplayName(instance), systemImage: instance.instrument.systemImage)
                         Spacer()
                     }
-                    .padding(8)
+                    .padding(16)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color(.secondarySystemBackground))
