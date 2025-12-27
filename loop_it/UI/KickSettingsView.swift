@@ -25,7 +25,7 @@ struct KickSettingsView: View {
 
             Button("Preview Kick") {
                 audio.setKickPreset(selectedPreset)
-                audio.playKickPreview()
+                audio.playPreview()
             }
             .buttonStyle(.bordered)
         }
