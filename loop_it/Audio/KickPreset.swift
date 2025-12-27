@@ -8,7 +8,7 @@
 import Foundation
 
 /// Maps a friendly name to a GM drum kit program and kick note.
-struct KickPreset: Identifiable, Hashable {
+struct KickPreset: DrumPreset {
     let id: String
     let title: String
     let program: UInt8   // drum kit program in the SF2
