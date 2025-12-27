@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     // MARK: - State
-    @StateObject private var audio = SoundFontKickEngine()
+    @ObservedObject var audio: SoundFontKickEngine
     @State private var bpm: Double = 120
     @State private var kickPatterns: [KickPatternRow] = (0..<1).map { _ in KickPatternRow() }
     @State private var snarePatterns: [KickPatternRow] = (0..<1).map { _ in KickPatternRow() }
@@ -40,6 +40,9 @@ struct ContentView: View {
             }
             .onChange(of: selectedInstrument) { _, _ in
                 applySelectedPreset()
+                if audio.isRunning {
+                    audio.updateKickTracks(tracks(for: selectedPatterns))
+                }
             }
         }
     }
@@ -48,13 +51,21 @@ struct ContentView: View {
 // MARK: - Sections
 private extension ContentView {
     var instrumentMenu: some View {
-        Picker("Instrument", selection: $selectedInstrument) {
-            ForEach(DrumInstrument.allCases) { instrument in
-                Label(instrument.title, systemImage: instrument.systemImage)
-                    .tag(instrument)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Instrument")
+                .font(.headline)
+            HStack(spacing: 12) {
+                ForEach(DrumInstrument.allCases) { instrument in
+                    Button {
+                        selectedInstrument = instrument
+                    } label: {
+                        Label(instrument.title, systemImage: instrument.systemImage)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(selectedInstrument == instrument ? .borderedProminent : .bordered)
+                }
             }
         }
-        .pickerStyle(.segmented)
     }
 
     var headerSection: some View {
@@ -297,4 +308,4 @@ private extension ContentView {
     }
 }
 
-#Preview { ContentView() }
+#Preview { ContentView(audio: SoundFontKickEngine()) }

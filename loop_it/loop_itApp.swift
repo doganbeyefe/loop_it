@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct loop_itApp: App {
+    @StateObject private var audio = SoundFontKickEngine()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(audio: audio)
         }
     }
 }
