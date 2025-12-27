@@ -11,14 +11,12 @@ struct ContentView: View {
     // MARK: - State
     @ObservedObject var audio: SoundFontKickEngine
     @State private var bpm: Double = 120
-    @State private var kickPatterns: [KickPatternRow] = (0..<1).map { _ in KickPatternRow() }
-    @State private var snarePatterns: [KickPatternRow] = (0..<1).map { _ in KickPatternRow() }
-    @State private var hiHatPatterns: [KickPatternRow] = (0..<1).map { _ in KickPatternRow() }
+    @State private var instrumentInstances: [InstrumentInstance] = [InstrumentInstance(instrument: .kick)]
+    @State private var patternsByInstance: [InstrumentInstance.ID: [KickPatternRow]] = [:]
+    @State private var selectedInstanceID: InstrumentInstance.ID?
     @State private var selectedKickPreset: KickPreset = KickPreset.all[0]
     @State private var selectedSnarePreset: SnarePreset = SnarePreset.all[0]
     @State private var selectedHiHatPreset: HiHatPreset = HiHatPreset.all[0]
-    @State private var selectedInstrument: DrumInstrument = .kick
-    @State private var addedInstruments: [DrumInstrument] = [.kick]
     private let bpmFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .none
@@ -27,43 +25,80 @@ struct ContentView: View {
         return formatter
     }()
 
+    private enum Route: Hashable {
+        case editor
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                menuSection
-                headerSection
-                patternSection
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .onAppear {
-                applyAllPresets()
-            }
-            .onChange(of: selectedInstrument) { _, _ in
-                applySelectedPreset()
-            }
-            .onChange(of: addedInstruments) { _, _ in
-                if !addedInstruments.contains(selectedInstrument),
-                   let fallback = addedInstruments.first {
-                    selectedInstrument = fallback
+        NavigationStack {
+            menuPage
+                .navigationDestination(for: Route.self) { route in
+                    switch route {
+                    case .editor:
+                        editorPage
+                    }
                 }
-            }
+                .navigationTitle("Loop It")
+        }
+        .onAppear {
+            initializeStateIfNeeded()
+        }
+        .onChange(of: instrumentInstances) { _, _ in
+            ensureSelectedInstance()
+            ensurePatternsForInstances()
         }
     }
 }
 
-// MARK: - Sections
+// MARK: - Pages
 private extension ContentView {
-    var menuSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Loop It")
-                    .font(.largeTitle)
-                    .bold()
-                Text("Click + to add instruments.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+    var menuPage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                menuHeader
+                instrumentList
+                NavigationLink(value: Route.editor) {
+                    Text("Edit Patterns")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(BorderedProminentButtonStyle())
+                .disabled(instrumentInstances.isEmpty)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+        }
+    }
+
+    var editorPage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                editorHeader
+                instrumentSelection
+                instrumentHeaderSection
+                instrumentPatternSection
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .onAppear {
+                ensureSelectedInstance()
+                ensurePatternsForInstances()
+            }
+        }
+        .navigationTitle("Pattern Editor")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Menu UI
+private extension ContentView {
+    var menuHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add your instruments")
+                .font(.title2)
+                .bold()
+            Text("Tap + to add as many instruments as you want before editing patterns.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
             HStack {
                 Text("Instruments")
@@ -76,7 +111,6 @@ private extension ContentView {
                         } label: {
                             Text(instrument.title)
                         }
-                        .disabled(addedInstruments.contains(instrument))
                     }
                 } label: {
                     Image(systemName: "plus.circle.fill")
@@ -84,77 +118,111 @@ private extension ContentView {
                 }
                 .accessibilityLabel("Add instrument")
             }
+        }
+    }
 
-            if addedInstruments.isEmpty {
+    var instrumentList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if instrumentInstances.isEmpty {
                 Text("No instruments added yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
+                ForEach(instrumentInstances) { instance in
+                    HStack {
+                        Label(instanceDisplayName(instance), systemImage: instance.instrument.systemImage)
+                        Spacer()
+                    }
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(.secondarySystemBackground))
+                    )
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Editor UI
+private extension ContentView {
+    var editorHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Edit your patterns")
+                .font(.title2)
+                .bold()
+            Text("Use Update to apply your changes to playback.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    var instrumentSelection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Instruments")
+                .font(.headline)
+            if instrumentInstances.isEmpty {
+                Text("Add instruments from the menu page.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
                 HStack(spacing: 12) {
-                    ForEach(addedInstruments) { instrument in
-                        instrumentSelectionButton(for: instrument)
+                    ForEach(instrumentInstances) { instance in
+                        instrumentSelectionButton(for: instance)
                     }
                 }
             }
         }
     }
 
-    var headerSection: some View {
-        instrumentHeaderSection
-    }
-
-    var patternSection: some View {
-        instrumentPatternSection
-    }
-
     var topRightSection: some View {
-            HStack {
-                Text("BPM")
-                    .font(.subheadline)
-                TextField("BPM", value: $bpm, formatter: bpmFormatter)
-                    .frame(width: 70)
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.trailing)
-                    .keyboardType(.numberPad)
-                Button("Start") {
-                    applyAllPresets()
-                    audio.start(bpm: bpm, tracksByInstrument: tracksByInstrument())
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(audio.isRunning)
-
-                Button("Stop") {
-                    audio.stop()
-                }
-                .buttonStyle(.bordered)
-                .disabled(!audio.isRunning)
+        HStack(spacing: 12) {
+            Text("BPM")
+                .font(.subheadline)
+            TextField("BPM", value: $bpm, formatter: bpmFormatter)
+                .frame(width: 70)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .keyboardType(.numberPad)
+            Button("Update") {
+                applyUpdate()
             }
+            .buttonStyle(BorderedProminentButtonStyle())
+
+            Button("Stop") {
+                audio.stop()
+            }
+            .buttonStyle(BorderedButtonStyle())
+            .disabled(!audio.isRunning)
+        }
     }
 
     var addPatternButton: some View {
         HStack {
             Spacer()
             Button {
-                addPatternForSelectedInstrument()
+                addPatternForSelectedInstance()
             } label: {
                 Image(systemName: "plus.circle.fill")
                     .font(.title2)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PlainButtonStyle())
             .accessibilityLabel("Add pattern")
             Spacer()
         }
     }
+}
 
+// MARK: - Sections
+private extension ContentView {
     var instrumentHeaderSection: some View {
         switch selectedInstrument {
         case .kick:
             return AnyView(
                 headerSection(
-                    title: "Kick",
+                    title: instanceTitle(for: .kick),
                     selectedPreset: $selectedKickPreset,
                     presets: KickPreset.all,
-                    onPresetChange: { audio.setKickPreset($0) },
                     onPreview: {
                         audio.setKickPreset(selectedKickPreset)
                         audio.playPreview(for: .kick)
@@ -164,10 +232,9 @@ private extension ContentView {
         case .snare:
             return AnyView(
                 headerSection(
-                    title: "Snare",
+                    title: instanceTitle(for: .snare),
                     selectedPreset: $selectedSnarePreset,
                     presets: SnarePreset.all,
-                    onPresetChange: { audio.setSnarePreset($0) },
                     onPreview: {
                         audio.setSnarePreset(selectedSnarePreset)
                         audio.playPreview(for: .snare)
@@ -177,10 +244,9 @@ private extension ContentView {
         case .hiHat:
             return AnyView(
                 headerSection(
-                    title: "Hi-Hat",
+                    title: instanceTitle(for: .hiHat),
                     selectedPreset: $selectedHiHatPreset,
                     presets: HiHatPreset.all,
-                    onPresetChange: { audio.setHiHatPreset($0) },
                     onPreview: {
                         audio.setHiHatPreset(selectedHiHatPreset)
                         audio.playPreview(for: .hiHat)
@@ -191,42 +257,49 @@ private extension ContentView {
     }
 
     var instrumentPatternSection: some View {
-        switch selectedInstrument {
-        case .kick:
-            return AnyView(patternSection(for: $kickPatterns, instrument: .kick, onDelete: removeKickPattern))
-        case .snare:
-            return AnyView(patternSection(for: $snarePatterns, instrument: .snare, onDelete: removeSnarePattern))
-        case .hiHat:
-            return AnyView(patternSection(for: $hiHatPatterns, instrument: .hiHat, onDelete: removeHiHatPattern))
+        guard let selectedInstance else {
+            return AnyView(EmptyView())
         }
+        let patternsBinding = bindingForPatterns(instanceID: selectedInstance.id)
+        return AnyView(
+            patternSection(
+                for: patternsBinding,
+                instrument: selectedInstance.instrument,
+                offset: trackOffset(for: selectedInstance),
+                onDelete: removePattern
+            )
+        )
     }
 
-    @ViewBuilder
-    func instrumentSelectionButton(for instrument: DrumInstrument) -> some View {
-        if selectedInstrument == instrument {
-            Button {
-                selectedInstrument = instrument
-            } label: {
-                Label(instrument.title, systemImage: instrument.systemImage)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-        } else {
-            Button {
-                selectedInstrument = instrument
-            } label: {
-                Label(instrument.title, systemImage: instrument.systemImage)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
+    func instrumentSelectionButton(for instance: InstrumentInstance) -> some View {
+        let isSelected = selectedInstanceID == instance.id
+        if isSelected {
+            return AnyView(
+                Button {
+                    selectedInstanceID = instance.id
+                } label: {
+                    Label(instanceDisplayName(instance), systemImage: instance.instrument.systemImage)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(BorderedProminentButtonStyle())
+            )
         }
+
+        return AnyView(
+            Button {
+                selectedInstanceID = instance.id
+            } label: {
+                Label(instanceDisplayName(instance), systemImage: instance.instrument.systemImage)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(BorderedButtonStyle())
+        )
     }
 
     func headerSection<Preset: DrumPreset>(
         title: String,
         selectedPreset: Binding<Preset>,
         presets: [Preset],
-        onPresetChange: @escaping (Preset) -> Void,
         onPreview: @escaping () -> Void
     ) -> some View {
         HStack(alignment: .top, spacing: 16) {
@@ -239,15 +312,11 @@ private extension ContentView {
                 }
             }
             .pickerStyle(.menu)
-            .onChange(of: selectedPreset.wrappedValue) { _, newPreset in
-                onPresetChange(newPreset)
-            }
 
             Button("Preview \(title)") {
                 onPreview()
             }
-            .buttonStyle(.bordered)
-//            Spacer()
+            .buttonStyle(BorderedButtonStyle())
             topRightSection
         }
     }
@@ -255,17 +324,30 @@ private extension ContentView {
     func patternSection(
         for patterns: Binding<[KickPatternRow]>,
         instrument: DrumInstrument,
+        offset: Int,
         onDelete: @escaping (KickPatternRow.ID) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            ForEach(patterns) { $pattern in
-                let isActive = audio.currentTrackIndices[instrument] == patterns.wrappedValue.firstIndex(where: { $0.id == pattern.id })
+            ForEach(Array(patterns.wrappedValue.enumerated()), id: \.element.id) { index, pattern in
+                let isActive = audio.currentTrackIndices[instrument] == (offset + index)
+                let stepsBinding = Binding(
+                    get: { patterns.wrappedValue[index].steps },
+                    set: { patterns.wrappedValue[index].steps = $0 }
+                )
+                let speedBinding = Binding(
+                    get: { patterns.wrappedValue[index].speed },
+                    set: { patterns.wrappedValue[index].speed = $0 }
+                )
+                let repeatBinding = Binding(
+                    get: { patterns.wrappedValue[index].repeatCount },
+                    set: { patterns.wrappedValue[index].repeatCount = $0 }
+                )
                 HStack(spacing: 16) {
-                    KickPatternView(steps: $pattern.steps)
+                    KickPatternView(steps: stepsBinding)
                     Spacer()
                     KickSpeedControl(
-                        speed: $pattern.speed,
-                        repeatCount: $pattern.repeatCount,
+                        speed: speedBinding,
+                        repeatCount: repeatBinding,
                         onDelete: {
                             onDelete(pattern.id)
                         }
@@ -286,59 +368,95 @@ private extension ContentView {
             addPatternButton
         }
         .animation(.easeInOut, value: patterns.wrappedValue)
-        .onChange(of: patterns.wrappedValue) { _, newPatterns in
-            guard audio.isRunning else { return }
-            audio.updateInstrumentTracks(
-                instrument,
-                tracks: newPatterns.map {
-                    KickTrack(pattern: $0.steps, speedMultiplier: $0.speed, repeatCount: $0.repeatCount)
-                }
-            )
+    }
+}
+
+// MARK: - State helpers
+private extension ContentView {
+    var selectedInstance: InstrumentInstance? {
+        instrumentInstances.first { $0.id == selectedInstanceID }
+    }
+
+    var selectedInstrument: DrumInstrument {
+        selectedInstance?.instrument ?? .kick
+    }
+
+    func initializeStateIfNeeded() {
+        ensurePatternsForInstances()
+        ensureSelectedInstance()
+        applyAllPresets()
+    }
+
+    func ensureSelectedInstance() {
+        if selectedInstanceID == nil || !instrumentInstances.contains(where: { $0.id == selectedInstanceID }) {
+            selectedInstanceID = instrumentInstances.first?.id
         }
     }
 
-    func addPatternForSelectedInstrument() {
-        withAnimation(.easeInOut) {
-            switch selectedInstrument {
-            case .kick:
-                kickPatterns.append(KickPatternRow())
-            case .snare:
-                snarePatterns.append(KickPatternRow())
-            case .hiHat:
-                hiHatPatterns.append(KickPatternRow())
+    func ensurePatternsForInstances() {
+        instrumentInstances.forEach { instance in
+            if patternsByInstance[instance.id] == nil {
+                patternsByInstance[instance.id] = [KickPatternRow()]
             }
         }
     }
 
-    func removeKickPattern(at id: KickPatternRow.ID) {
-        guard let index = kickPatterns.firstIndex(where: { $0.id == id }) else { return }
+    func bindingForPatterns(instanceID: InstrumentInstance.ID) -> Binding<[KickPatternRow]> {
+        Binding(
+            get: { patternsByInstance[instanceID] ?? [KickPatternRow()] },
+            set: { patternsByInstance[instanceID] = $0 }
+        )
+    }
+
+    func instanceDisplayName(_ instance: InstrumentInstance) -> String {
+        let index = indexForInstance(instance)
+        return "\(instance.instrument.title) \(index)"
+    }
+
+    func indexForInstance(_ instance: InstrumentInstance) -> Int {
+        let matches = instrumentInstances.filter { $0.instrument == instance.instrument }
+        let index = matches.firstIndex { $0.id == instance.id } ?? 0
+        return index + 1
+    }
+
+    func trackOffset(for instance: InstrumentInstance) -> Int {
+        var offset = 0
+        for item in instrumentInstances {
+            if item.id == instance.id {
+                break
+            }
+            guard item.instrument == instance.instrument else { continue }
+            offset += patternsByInstance[item.id]?.count ?? 0
+        }
+        return offset
+    }
+
+    func instanceTitle(for instrument: DrumInstrument) -> String {
+        guard let selectedInstance else {
+            return instrument.title
+        }
+        return "\(instrument.title) \(indexForInstance(selectedInstance))"
+    }
+}
+
+// MARK: - Actions
+private extension ContentView {
+    func addPatternForSelectedInstance() {
+        guard let selectedInstance else { return }
         withAnimation(.easeInOut) {
-            kickPatterns.remove(at: index)
+            var patterns = patternsByInstance[selectedInstance.id] ?? []
+            patterns.append(KickPatternRow())
+            patternsByInstance[selectedInstance.id] = patterns
         }
     }
 
-    func removeSnarePattern(at id: KickPatternRow.ID) {
-        guard let index = snarePatterns.firstIndex(where: { $0.id == id }) else { return }
+    func removePattern(at id: KickPatternRow.ID) {
+        guard let selectedInstance else { return }
+        guard var patterns = patternsByInstance[selectedInstance.id] else { return }
+        guard let index = patterns.firstIndex(where: { $0.id == id }) else { return }
         withAnimation(.easeInOut) {
-            snarePatterns.remove(at: index)
-        }
-    }
-
-    func removeHiHatPattern(at id: KickPatternRow.ID) {
-        guard let index = hiHatPatterns.firstIndex(where: { $0.id == id }) else { return }
-        withAnimation(.easeInOut) {
-            hiHatPatterns.remove(at: index)
-        }
-    }
-
-    func applySelectedPreset() {
-        switch selectedInstrument {
-        case .kick:
-            audio.setKickPreset(selectedKickPreset)
-        case .snare:
-            audio.setSnarePreset(selectedSnarePreset)
-        case .hiHat:
-            audio.setHiHatPreset(selectedHiHatPreset)
+            patterns.remove(at: index)
+            patternsByInstance[selectedInstance.id] = patterns
         }
     }
 
@@ -348,31 +466,26 @@ private extension ContentView {
         audio.setHiHatPreset(selectedHiHatPreset)
     }
 
+    func applyUpdate() {
+        applyAllPresets()
+        audio.updateSession(bpm: bpm, tracksByInstrument: tracksByInstrument())
+    }
+
     func tracksByInstrument() -> [DrumInstrument: [KickTrack]] {
         var mapping: [DrumInstrument: [KickTrack]] = [:]
-        for instrument in addedInstruments {
-            mapping[instrument] = tracks(for: patterns(for: instrument))
+        for instance in instrumentInstances {
+            let patterns = patternsByInstance[instance.id] ?? []
+            let tracks = tracks(for: patterns)
+            mapping[instance.instrument, default: []].append(contentsOf: tracks)
         }
         return mapping
     }
 
-    func patterns(for instrument: DrumInstrument) -> [KickPatternRow] {
-        switch instrument {
-        case .kick:
-            return kickPatterns
-        case .snare:
-            return snarePatterns
-        case .hiHat:
-            return hiHatPatterns
-        }
-    }
-
     func addInstrument(_ instrument: DrumInstrument) {
-        guard !addedInstruments.contains(instrument) else { return }
-        addedInstruments.append(instrument)
-        if !addedInstruments.contains(selectedInstrument) {
-            selectedInstrument = instrument
-        }
+        let newInstance = InstrumentInstance(instrument: instrument)
+        instrumentInstances.append(newInstance)
+        patternsByInstance[newInstance.id] = [KickPatternRow()]
+        selectedInstanceID = newInstance.id
     }
 
     func tracks(for patterns: [KickPatternRow]) -> [KickTrack] {
