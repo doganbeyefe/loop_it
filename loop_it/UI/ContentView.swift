@@ -194,7 +194,7 @@ private extension ContentView {
         onDelete: @escaping (KickPatternRow.ID) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            ForEach(patterns) { $pattern in
+            ForEach($patterns) { $pattern in
                 let isActive = audio.currentTrackIndex == patterns.wrappedValue.firstIndex(where: { $0.id == pattern.id })
                 HStack(spacing: 16) {
                     KickPatternView(steps: $pattern.steps)
