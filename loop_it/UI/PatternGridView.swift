@@ -1,5 +1,5 @@
 //
-//  KickPatternView.swift
+//  PatternGridView.swift
 //  loop_it
 //
 //  Created by Mustafa Efe Doganbey on 26.12.25.
@@ -7,8 +7,8 @@
 
 import SwiftUI
 
-/// Simple 4-step toggle UI for a kick pattern.
-struct KickPatternView: View {
+/// Simple 4-step toggle UI for a drum pattern.
+struct PatternGridView: View {
     @Binding var steps: [Bool] // expects 4 items
 
     var body: some View {

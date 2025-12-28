@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct KickSettingsView: View {
-    @ObservedObject var audio: SoundFontKickEngine
+    @ObservedObject var audio: SoundFontDrumEngine
     let instanceID: InstrumentInstanceID = InstrumentInstanceID(instrument: .kick)
     let instrument: DrumInstrument = .kick
     @State private var selectedPreset: KickPreset = KickPreset.all[0]

@@ -1,5 +1,5 @@
 //
-//  KickSpeedControl.swift
+//  PatternSpeedControl.swift
 //  loop_it
 //
 //  Created by Mustafa Efe Doganbey on 26.12.25.
@@ -7,8 +7,8 @@
 
 import SwiftUI
 
-/// UI control for speeding up or slowing down a kick pattern row.
-struct KickSpeedControl: View {
+/// UI control for speeding up or slowing down a pattern row.
+struct PatternSpeedControl: View {
     @Binding var speed: Double
     @Binding var repeatCount: Int
     let onDelete: () -> Void

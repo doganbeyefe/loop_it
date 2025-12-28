@@ -9,7 +9,7 @@ import SwiftUI
 
 @main
 struct loop_itApp: App {
-    @StateObject private var audio = SoundFontKickEngine()
+    @StateObject private var audio = SoundFontDrumEngine()
 
     var body: some Scene {
         WindowGroup {

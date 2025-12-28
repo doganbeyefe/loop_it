@@ -9,10 +9,10 @@ import SwiftUI
 
 struct ContentView: View {
     // MARK: - State
-    @ObservedObject var audio: SoundFontKickEngine
+    @ObservedObject var audio: SoundFontDrumEngine
     @State private var bpm: Double = 120
     @State private var instrumentInstances: [InstrumentInstance] = []
-    @State private var patternsByInstance: [InstrumentInstance.ID: [KickPatternRow]] = [:]
+    @State private var patternsByInstance: [InstrumentInstance.ID: [PatternRow]] = [:]
     @State private var selectedInstanceID: InstrumentInstance.ID?
     @State private var kickPresetByInstance: [InstrumentInstance.ID: KickPreset] = [:]
     @State private var snarePresetByInstance: [InstrumentInstance.ID: SnarePreset] = [:]
@@ -98,15 +98,59 @@ private extension ContentView {
 private extension ContentView {
     var menuHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Loop It")
-                .font(.largeTitle)
-                .bold()
-                .foregroundStyle(.black)
-            
-            Text("Create and layer beats with ease.")
-                .font(.subheadline)
-                .foregroundStyle(.black.opacity(0.7))
-                .padding(.bottom, 16)
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Loop It")
+                        .font(.largeTitle)
+                        .bold()
+                        .foregroundStyle(.black)
+                    
+                    Text("Create and layer beats with ease.")
+                        .font(.subheadline)
+                        .foregroundStyle(.black.opacity(0.7))
+                }
+                Spacer()
+                HStack(spacing: 12) {
+                    HStack(spacing: 6) {
+                        Text("BPM")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        TextField("BPM", value: $bpm, formatter: bpmFormatter)
+                            .frame(width: 60)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .keyboardType(.numberPad)
+                    }
+                    Button {
+                        applyStartOrUpdate()
+                    } label: {
+                        if isStarting {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: audio.isRunning ? "arrow.triangle.2.circlepath" : "play.fill")
+                                .frame(width: 38, height: 28)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.green.opacity(0.8))
+                    .disabled(isStarting)
+
+                    Button {
+                        audio.stop()
+                        isStarting = false
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .frame(width: 38, height: 28)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red.opacity(0.8))
+                    .disabled(!audio.isRunning)
+                }
+            }
 
             HStack {
                 Text("Instruments")
@@ -287,15 +331,23 @@ private extension ContentView {
                         .progressViewStyle(.circular)
                         .tint(.white)
                 } else {
-                    Text(audio.isRunning ? "Update" : "Start")
+                    Image(systemName: audio.isRunning ? "arrow.triangle.2.circlepath" : "play.fill")
+                        .frame(width: 38, height: 28)
+                        .background(audio.isRunning ? Color.accentColor.opacity(0.12) : Color.green.opacity(0.2))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
             .buttonStyle(.borderedProminent)
             .disabled(isStarting)
 
-            Button("Stop") {
+            Button {
                 audio.stop()
                 isStarting = false
+            } label: {
+                Image(systemName: "stop.fill")
+                    .frame(width: 38, height: 28)
+                    .background(Color.red.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.bordered)
             .disabled(!audio.isRunning)
@@ -431,18 +483,18 @@ private extension ContentView {
     }
 
     func patternSection(
-        for patterns: Binding<[KickPatternRow]>,
+        for patterns: Binding<[PatternRow]>,
         instanceID: InstrumentInstance.ID,
-        onDelete: @escaping (KickPatternRow.ID) -> Void
+        onDelete: @escaping (PatternRow.ID) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(patterns) { $pattern in
                 let localIndex = patterns.wrappedValue.firstIndex(where: { $0.id == pattern.id }) ?? 0
                 let isActive = audio.currentTrackIndices[instanceID]?.contains(localIndex) == true
                 HStack(spacing: 16) {
-                    KickPatternView(steps: $pattern.steps)
+                    PatternGridView(steps: $pattern.steps)
                     Spacer()
-                    KickSpeedControl(
+                    PatternSpeedControl(
                         speed: $pattern.speed,
                         repeatCount: $pattern.repeatCount,
                         onDelete: {
@@ -489,7 +541,7 @@ private extension ContentView {
     func ensurePatternsForInstances() {
         instrumentInstances.forEach { instance in
             if patternsByInstance[instance.id] == nil {
-                patternsByInstance[instance.id] = [KickPatternRow()]
+                patternsByInstance[instance.id] = [PatternRow()]
             }
         }
     }
@@ -513,9 +565,9 @@ private extension ContentView {
         }
     }
 
-    func bindingForPatterns(instanceID: InstrumentInstance.ID) -> Binding<[KickPatternRow]> {
+    func bindingForPatterns(instanceID: InstrumentInstance.ID) -> Binding<[PatternRow]> {
         Binding(
-            get: { patternsByInstance[instanceID] ?? [KickPatternRow()] },
+            get: { patternsByInstance[instanceID] ?? [PatternRow()] },
             set: { patternsByInstance[instanceID] = $0 }
         )
     }
@@ -578,12 +630,12 @@ private extension ContentView {
         guard let selectedInstance else { return }
         withAnimation(.easeInOut) {
             var patterns = patternsByInstance[selectedInstance.id] ?? []
-            patterns.append(KickPatternRow())
+            patterns.append(PatternRow())
             patternsByInstance[selectedInstance.id] = patterns
         }
     }
 
-    func removePattern(at id: KickPatternRow.ID) {
+    func removePattern(at id: PatternRow.ID) {
         guard let selectedInstance else { return }
         guard var patterns = patternsByInstance[selectedInstance.id] else { return }
         guard let index = patterns.firstIndex(where: { $0.id == id }) else { return }
@@ -653,7 +705,7 @@ private extension ContentView {
     func addInstrument(_ instrument: DrumInstrument) {
         let newInstance = InstrumentInstance(instrument: instrument)
         instrumentInstances.append(newInstance)
-        patternsByInstance[newInstance.id] = [KickPatternRow()]
+        patternsByInstance[newInstance.id] = [PatternRow()]
         selectedInstanceID = newInstance.id
         switch instrument {
         case .kick:
@@ -676,9 +728,9 @@ private extension ContentView {
         }
     }
 
-    func tracks(for patterns: [KickPatternRow]) -> [KickTrack] {
+    func tracks(for patterns: [PatternRow]) -> [DrumTrack] {
         patterns.map {
-            KickTrack(
+            DrumTrack(
                 pattern: $0.steps,
                 speedMultiplier: $0.speed,
                 repeatCount: $0.repeatCount
@@ -687,7 +739,7 @@ private extension ContentView {
     }
 }
 
-#Preview { ContentView(audio: SoundFontKickEngine()) }
+#Preview { ContentView(audio: SoundFontDrumEngine()) }
 
 //
 

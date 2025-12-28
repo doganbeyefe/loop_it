@@ -2,7 +2,7 @@ import Foundation
 import AVFoundation
 
 /// A single pattern lane with its own step sequence and playback speed.
-struct KickTrack: Equatable {
+struct DrumTrack: Equatable {
     var pattern: [Bool]
     var speedMultiplier: Double
     var repeatCount: Int
@@ -14,12 +14,12 @@ typealias InstrumentInstanceID = InstrumentKey
 /// Payload describing what an instrument instance should play and how it should sound.
 struct InstrumentPlaybackConfig {
     let instrument: DrumInstrument
-    let tracks: [KickTrack]
+    let tracks: [DrumTrack]
     let program: UInt8
     let midiNote: UInt8
 }
 
-final class SoundFontKickEngine: ObservableObject {
+final class SoundFontDrumEngine: ObservableObject {
 
     // MARK: - Published state
     @Published var isRunning = false
@@ -27,7 +27,7 @@ final class SoundFontKickEngine: ObservableObject {
 
     // MARK: - Audio engine plumbing
     private let engine = AVAudioEngine()
-    private let playbackQueue = DispatchQueue(label: "SoundFontKickEngine.playback")
+    private let playbackQueue = DispatchQueue(label: "SoundFontDrumEngine.playback")
 
     // MARK: - Playback configuration
     private var baseBpm: Double = 120
@@ -61,11 +61,11 @@ final class SoundFontKickEngine: ObservableObject {
 
     private final class InstanceState {
         final class TrackState {
-            let track: KickTrack
+            let track: DrumTrack
             var currentStepIndex: Int = 0
             var repeatRemaining: Int
 
-            init(track: KickTrack) {
+            init(track: DrumTrack) {
                 self.track = track
                 self.repeatRemaining = max(1, track.repeatCount)
             }
@@ -412,7 +412,7 @@ final class SoundFontKickEngine: ObservableObject {
     private func configureInstance(
         id: InstrumentInstanceID,
         instrument: DrumInstrument,
-        tracks: [KickTrack],
+        tracks: [DrumTrack],
         program: UInt8,
         midiNote: UInt8,
         startTime: DispatchTime?
