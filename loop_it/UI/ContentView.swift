@@ -34,7 +34,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.white.ignoresSafeArea()
+                Color(.systemBackground).ignoresSafeArea()
                 menuPage
             }
             .navigationDestination(for: Route.self) { route in
@@ -66,7 +66,7 @@ private extension ContentView {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
         }
-        .background(Color.white.ignoresSafeArea())
+        .background(Color(.systemBackground).ignoresSafeArea())
     }
 
     func editorPage(selectedID: InstrumentInstance.ID?) -> some View {
@@ -90,25 +90,19 @@ private extension ContentView {
         }
         .navigationTitle("Pattern Editor")
         .navigationBarTitleDisplayMode(.inline)
-        .background(Color.white.ignoresSafeArea())
+        .background(Color(.systemBackground).ignoresSafeArea())
     }
 }
 
 // MARK: - Menu UI
 private extension ContentView {
     var menuHeader: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 24) {
             HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Loop It")
-                        .font(.largeTitle)
-                        .bold()
-                        .foregroundStyle(.black)
-                    
-                    Text("Create and layer beats with ease.")
-                        .font(.subheadline)
-                        .foregroundStyle(.black.opacity(0.7))
-                }
+                Text("Loop It")
+                    .font(.largeTitle)
+                    .bold()
+                    .foregroundStyle(.primary)
                 Spacer()
                 HStack(spacing: 12) {
                     HStack(spacing: 6) {
@@ -155,7 +149,7 @@ private extension ContentView {
             HStack {
                 Text("Instruments")
                     .font(.headline)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(.primary)
                 Spacer()
                 Menu {
                     ForEach(DrumInstrument.allCases) { instrument in
@@ -182,10 +176,10 @@ private extension ContentView {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.gray.opacity(0.08))
+                .fill(Color(.secondarySystemBackground))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.gray.opacity(0.12), lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                 )
         )
     }
@@ -193,9 +187,13 @@ private extension ContentView {
     var instrumentList: some View {
         VStack(alignment: .leading, spacing: 12) {
             if instrumentInstances.isEmpty {
-                Text("Tap + to add instruments")
-                    .font(.subheadline)
-                    .foregroundStyle(.gray)
+                HStack {
+                    Spacer()
+                    Text("Tap + to add instruments")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
             } else {
                 ForEach(instrumentInstances) { instance in
                     instrumentCard(for: instance)
@@ -211,9 +209,9 @@ private extension ContentView {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(Color.gray.opacity(0.15))
-                .frame(width: 38, height: 38)
-            Image(systemName: instance.instrument.systemImage)
+                    .fill(Color(.tertiarySystemBackground))
+                    .frame(width: 38, height: 38)
+                Image(systemName: instance.instrument.systemImage)
                     .foregroundStyle(.primary)
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -246,10 +244,10 @@ private extension ContentView {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color.gray.opacity(0.08))
+                .fill(Color(.secondarySystemBackground))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.gray.opacity(0.12), lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                 )
         )
         .confirmationDialog(
@@ -337,7 +335,8 @@ private extension ContentView {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered)
+            .tint(audio.isRunning ? Color.accentColor.opacity(0.8) : Color.green.opacity(0.8))
             .disabled(isStarting)
 
             Button {
@@ -350,6 +349,7 @@ private extension ContentView {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.bordered)
+            .tint(.red.opacity(0.8))
             .disabled(!audio.isRunning)
         }
     }
